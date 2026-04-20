@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Standard neural network layers — PyTorch implementation.
 
 Zone: Z3 (BF16) — all neural network layers operate in Z3 precision.

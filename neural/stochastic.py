@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Stochastic physics parameterization — PyTorch implementation.
 
 Provides:
@@ -17,8 +19,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import primitive_equations as pe
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import primitive_equations as pe
+from tornado_gcm.core import spherical_harmonic
 
 
 # ═══════════════════════════════════════════════════════════════════════════

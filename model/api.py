@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """NeuralGCM model API — PyTorch implementation.
 
 Provides the main model class that combines:
@@ -29,15 +31,15 @@ import torch.nn as nn
 import torch.utils.checkpoint as torch_checkpoint
 from torch.profiler import record_function
 
-from pytorch_src.core import coordinate_systems
-from pytorch_src.core import filtering
-from pytorch_src.core import primitive_equations
-from pytorch_src.core import spherical_harmonic
-from pytorch_src.core import time_integration
-from pytorch_src.precision.monitor import PrecisionMonitor
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.zone_cast import zone_cast
-from pytorch_src.typing import ModelState, RandomnessState
+from tornado_gcm.core import coordinate_systems
+from tornado_gcm.core import filtering
+from tornado_gcm.core import primitive_equations
+from tornado_gcm.core import spherical_harmonic
+from tornado_gcm.core import time_integration
+from tornado_gcm.precision.monitor import PrecisionMonitor
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.zone_cast import zone_cast
+from tornado_gcm.typing import ModelState, RandomnessState
 
 
 logger = logging.getLogger(__name__)
@@ -969,7 +971,7 @@ class NeuralGCMModel(nn.Module):
         Returns:
             ``(final_state, trajectory)``
         """
-        from pytorch_src.core.scan_utils import nested_rollout
+        from tornado_gcm.core.scan_utils import nested_rollout
 
         self.policy.apply_tf32_setting()
         use_model_state = isinstance(initial_state, ModelState)

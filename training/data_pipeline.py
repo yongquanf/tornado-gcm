@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Data pipeline: xarray I/O, sim_time, forcing strategies, regridding.
 
 Implements:

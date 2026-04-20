@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Conservation fixers — Z2 (FP64) precision zone.
 
 Implements:
@@ -12,8 +14,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import primitive_equations
-from pytorch_src.precision.zone_cast import f64_math
+from tornado_gcm.core import primitive_equations
+from tornado_gcm.precision.zone_cast import f64_math
 
 
 # ═══════════════════════════════════════════════════════════════════════════

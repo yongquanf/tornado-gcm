@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Neural-level PDE equation wrappers — PyTorch implementation.
 
 Provides:
@@ -15,14 +17,14 @@ from typing import Callable, Dict, Optional, Sequence, Union
 import numpy as np
 import torch
 
-from pytorch_src.core import coordinate_systems
-from pytorch_src.core import primitive_equations as pe
-from pytorch_src.core import sigma_coordinates as sigma_mod
-from pytorch_src.core import time_integration
-from pytorch_src.core import spherical_harmonic
-from pytorch_src.units import SimUnits
-from pytorch_src.neural.coordinates import SigmaLevels, HybridLevels, PressureLevels
-from pytorch_src.neural import field_utils
+from tornado_gcm.core import coordinate_systems
+from tornado_gcm.core import primitive_equations as pe
+from tornado_gcm.core import sigma_coordinates as sigma_mod
+from tornado_gcm.core import time_integration
+from tornado_gcm.core import spherical_harmonic
+from tornado_gcm.units import SimUnits
+from tornado_gcm.neural.coordinates import SigmaLevels, HybridLevels, PressureLevels
+from tornado_gcm.neural import field_utils
 
 
 # ═══════════════════════════════════════════════════════════════════════════

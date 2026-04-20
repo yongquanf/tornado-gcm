@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """HPS Visualization: sensitivity heatmaps + zone partition diagrams.
 
 Produces:
@@ -10,7 +12,7 @@ Produces:
 All plots use matplotlib. Exports PNG + PDF to output directory.
 
 Usage:
-    from pytorch_src.precision.hps_visualization import plot_hps_results
+    from tornado_gcm.precision.hps_visualization import plot_hps_results
     plot_hps_results(smap, discovery, output_dir)
 """
 
@@ -22,8 +24,8 @@ from typing import Optional
 
 import numpy as np
 
-from pytorch_src.precision.sensitivity import SensitivityMap
-from pytorch_src.precision.zone_discovery import DiscoveryResult
+from tornado_gcm.precision.sensitivity import SensitivityMap
+from tornado_gcm.precision.zone_discovery import DiscoveryResult
 
 logger = logging.getLogger(__name__)
 

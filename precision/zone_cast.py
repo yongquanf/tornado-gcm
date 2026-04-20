@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """ZoneCast: dtype conversion utilities for PZHA zone boundaries.
 
 Provides:
@@ -15,7 +17,7 @@ from typing import Any, Callable, Optional, TypeVar
 
 import torch
 
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
 
 logger = logging.getLogger(__name__)
 

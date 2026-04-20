@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Neural parameterizations — Z3 (BF16) → Z1 boundary management.
 
 Implements:
@@ -14,10 +16,10 @@ from typing import Callable, Optional
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import primitive_equations
-from pytorch_src.core.spherical_harmonic import Grid
-from pytorch_src.precision.policy import PrecisionZone
-from pytorch_src.precision.zone_cast import zone_cast
+from tornado_gcm.core import primitive_equations
+from tornado_gcm.core.spherical_harmonic import Grid
+from tornado_gcm.precision.policy import PrecisionZone
+from tornado_gcm.precision.zone_cast import zone_cast
 
 
 class SimpleParameterization(nn.Module):
@@ -224,7 +226,7 @@ class ModalNeuralDivCurlParameterization(nn.Module):
 
         # Neural network forward (Z3) with optional mixed-precision backward
         if self.use_mixed_precision_backward and self.training:
-            from pytorch_src.training.optimization import MixedPrecisionBackward
+            from tornado_gcm.training.optimization import MixedPrecisionBackward
             y_nodal = MixedPrecisionBackward.apply(
                 self.neural_net, x_nodal, self.fwd_dtype
             )
@@ -485,7 +487,7 @@ class JaxAlignedDivCurlParameterization(nn.Module):
         features = self.feature_transform(features)
 
         # 4. Pack features in sorted key order → (2365, lon, lat)
-        from pytorch_src.neural.features import pack_features
+        from tornado_gcm.neural.features import pack_features
         x = pack_features(features)
 
         # 5. Physics EPD → (192, lon, lat)

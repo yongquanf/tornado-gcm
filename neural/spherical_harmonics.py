@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Spherical harmonic mapping wrapper — PyTorch implementation.
 
 Provides FixedYlmMapping that wraps Grid for neural module use.
@@ -8,7 +10,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import spherical_harmonic
 
 
 class FixedYlmMapping(nn.Module):

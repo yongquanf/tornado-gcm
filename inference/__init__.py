@@ -1,4 +1,6 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Inference subpackage."""
 
-from pytorch_src.inference.runner import MPInference
-from pytorch_src.inference.sda_runner import SDAInference
+from tornado_gcm.inference.runner import MPInference
+from tornado_gcm.inference.sda_runner import SDAInference

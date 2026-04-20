@@ -1,10 +1,12 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Performance benchmark utilities for SDA framework.
 
 Provides timing, memory, and storage benchmarks comparing different
 precision configurations and backends.
 
 Usage:
-    from pytorch_src.precision.benchmarks import TimingBenchmark
+    from tornado_gcm.precision.benchmarks import TimingBenchmark
     bench = TimingBenchmark()
     bench.time_fn("eager_step", model.step, state, forcings)
     print(bench.report())

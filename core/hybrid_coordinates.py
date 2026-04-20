@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Hybrid sigma-pressure vertical coordinate system — PyTorch implementation.
 
 Zone: Z0 (FP64) for all coordinate arithmetic — these are structural
@@ -12,7 +14,7 @@ import functools
 import numpy as np
 import torch
 
-from pytorch_src.core import sigma_coordinates
+from tornado_gcm.core import sigma_coordinates
 
 
 @dataclasses.dataclass(frozen=True)

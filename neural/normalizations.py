@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Streaming normalization (StreamNorm) — PyTorch implementation.
 
 This replaces the JAX StreamNorm from NeuralGCM which maintains running

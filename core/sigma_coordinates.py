@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Sigma coordinate system based on normalized pressure.
 
 Z0 (Numerical Foundation): Coordinate arithmetic uses float64 (_with_f64_math).

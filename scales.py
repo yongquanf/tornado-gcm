@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Physical constants and unit scaling for NeuralGCM PyTorch.
 
 Provides the same physical constants and Scale/nondimensionalization system as

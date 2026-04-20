@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "tornado-gcm"
+version = "0.1.0"
+description = "PyTorch reimplementation of NeuralGCM with Precision-Zoned Hybrid Architecture (PZHA) for GPU-accelerated weather forecasting"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "yongquan fu", email = "quanyongf@126.com" }
+]
+keywords = ["weather forecasting", "neural GCM", "mixed precision", "PyTorch", "atmospheric model"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.1",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pint>=0.22",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+data = [
+    "xarray>=2023.1",
+    "zarr>=2.16",
+    "netCDF4>=1.6",
+]
+gpu = [
+    "triton>=2.1",
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "black>=23.0",
+    "isort>=5.12",
+    "ruff>=0.1",
+    "mypy>=1.5",
+    "pre-commit>=3.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/yongquanf/tornado-gcm"
+Repository = "https://github.com/yongquanf/tornado-gcm"
+Issues = "https://github.com/yongquanf/tornado-gcm/issues"
+
+[project.scripts]
+tornado-gcm = "tornado_gcm.cli:main"
+
+[tool.setuptools.packages.find]
+where = [".."]
+include = ["tornado_gcm*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["tornado_gcm"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = [
+    "E501",   # line too long (handled by black)
+    "E741",   # ambiguous variable name (common in physics/math code)
+    "F401",   # imported but unused (intentional re-exports)
+]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

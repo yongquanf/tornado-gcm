@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check tornado_gcm/
+
+      - name: Black format check
+        run: black --check tornado_gcm/
+
+      - name: isort check
+        run: isort --check-only tornado_gcm/
+
+      - name: Mypy type check
+        run: mypy tornado_gcm/ --ignore-missing-imports
+
+      - name: Pytest
+        run: pytest tests/ -v --tb=short

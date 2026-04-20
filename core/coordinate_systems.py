@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Coordinate system combining horizontal grid and vertical coordinates.
 
 This is the PyTorch port of dinosaur/coordinate_systems.py.
@@ -12,9 +14,9 @@ from typing import Any, Callable, Sequence, Union
 import numpy as np
 import torch
 
-from pytorch_src.core import layer_coordinates
-from pytorch_src.core import sigma_coordinates
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import layer_coordinates
+from tornado_gcm.core import sigma_coordinates
+from tornado_gcm.core import spherical_harmonic
 
 
 HorizontalGridTypes = spherical_harmonic.Grid

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Spectral filtering — exponential and horizontal diffusion filters.
 
 All filters operate in modal (spectral) space by computing per-wavenumber
@@ -11,7 +13,7 @@ from typing import Callable
 import numpy as np
 import torch
 
-from pytorch_src.core.spherical_harmonic import Grid
+from tornado_gcm.core.spherical_harmonic import Grid
 
 
 def exponential_filter(

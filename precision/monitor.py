@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """PrecisionMonitor: runtime precision diagnostics for PZHA.
 
 Tracks zone boundary precision loss, conservation accuracy, and NaN rates.

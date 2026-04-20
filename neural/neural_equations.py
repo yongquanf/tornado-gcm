@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Neural equation wrappers — DirectNeuralEquations / DivCurlNeuralEquations.
 
 These wrap features → NN mapping → tendency transforms → modal conversion
@@ -11,9 +13,9 @@ from typing import Callable, Dict, Optional, Sequence
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import primitive_equations as pe
-from pytorch_src.core import spherical_harmonic
-from pytorch_src.core import time_integration
+from tornado_gcm.core import primitive_equations as pe
+from tornado_gcm.core import spherical_harmonic
+from tornado_gcm.core import time_integration
 
 
 class DirectNeuralEquations(time_integration.ExplicitODE, nn.Module):

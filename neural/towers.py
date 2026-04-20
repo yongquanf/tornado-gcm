@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Tower modules — wrappers that apply NN layers over spatial fields.
 
 In the JAX version, these use `coordax.cmap` + `nnx.vmap` to vectorize
@@ -14,7 +16,7 @@ from typing import Callable, Optional, Sequence
 import torch
 import torch.nn as nn
 
-from pytorch_src.neural import standard_layers
+from tornado_gcm.neural import standard_layers
 
 
 class ForwardTower(nn.Module):

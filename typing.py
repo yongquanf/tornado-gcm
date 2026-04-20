@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Commonly used type aliases for the PyTorch NeuralGCM codebase."""
 
 from __future__ import annotations

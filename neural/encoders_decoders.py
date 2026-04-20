@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Encoder/Decoder modules — PyTorch implementation.
 
 Provides:
@@ -15,12 +17,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import primitive_equations as pe
-from pytorch_src.core import spherical_harmonic
-from pytorch_src.core import vertical_interpolation as vi
-from pytorch_src.core import coordinate_systems
-from pytorch_src.units import SimUnits
-from pytorch_src.neural import field_utils
+from tornado_gcm.core import primitive_equations as pe
+from tornado_gcm.core import spherical_harmonic
+from tornado_gcm.core import vertical_interpolation as vi
+from tornado_gcm.core import coordinate_systems
+from tornado_gcm.units import SimUnits
+from tornado_gcm.neural import field_utils
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -309,7 +311,7 @@ class PrimitiveToWeatherbenchDecoder(nn.Module):
         else:
             geo_surface = torch.zeros(1, *sp.shape[-2:], dtype=dtype, device=device)
 
-        from pytorch_src.core.primitive_equations import get_geopotential_on_sigma
+        from tornado_gcm.core.primitive_equations import get_geopotential_on_sigma
         q = None
         if "specific_humidity" in state.tracers:
             q = grid.to_nodal(state.tracers["specific_humidity"])

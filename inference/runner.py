@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Mixed-precision inference runner.
 
 Implements MPInference from PZHA:
@@ -16,9 +18,9 @@ from typing import Any, Callable
 import torch
 import torch.nn as nn
 
-from pytorch_src.model.api import NeuralGCMModel
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.monitor import PrecisionMonitor
+from tornado_gcm.model.api import NeuralGCMModel
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.monitor import PrecisionMonitor
 
 logger = logging.getLogger(__name__)
 

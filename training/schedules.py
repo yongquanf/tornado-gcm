@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Learning rate and rollout schedules.
 
 Learning rate schedules aligned with JAX NeuralGCM (optax-based):

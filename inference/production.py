@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Production inference runner with ensemble support and Zarr output.
 
 Implements:
@@ -18,8 +20,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pytorch_src.inference.runner import MPInference
-from pytorch_src.precision.policy import PrecisionPolicy
+from tornado_gcm.inference.runner import MPInference
+from tornado_gcm.precision.policy import PrecisionPolicy
 
 logger = logging.getLogger(__name__)
 

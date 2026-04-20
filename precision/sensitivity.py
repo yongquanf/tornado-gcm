@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """HPS Level-1: Hierarchical Sensitivity Profiler.
 
 Measures per-module precision sensitivity via controlled perturbation:
@@ -32,11 +34,11 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol
 import torch
 import torch.nn as nn
 
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.monitor import PrecisionMonitor
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.monitor import PrecisionMonitor
 
 if TYPE_CHECKING:
-    from pytorch_src.core.primitive_equations import State
+    from tornado_gcm.core.primitive_equations import State
 
 logger = logging.getLogger(__name__)
 

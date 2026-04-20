@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Triton reduction kernels for conservation fixers.
 
 Provides high-performance FP64-accumulator reductions for:

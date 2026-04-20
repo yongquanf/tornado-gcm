@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Nearest-time forcing selection — PyTorch analogue of ``DynamicDataForcing``.
 
 ``neuralgcm.legacy.forcings.DynamicDataForcing`` (after nondimensionalize) picks

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """DTensor-based tensor parallel sharding for NeuralGCM.
 
 Uses ``torch.distributed.tensor`` (DTensor) to shard simulation tensors
@@ -44,7 +46,7 @@ from typing import Any, Dict, Optional, Sequence, Union
 import torch
 import torch.nn as nn
 
-from pytorch_src.core.primitive_equations import State
+from tornado_gcm.core.primitive_equations import State
 
 logger = logging.getLogger(__name__)
 

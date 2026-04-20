@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Triton SHT Legendre summation kernels.
 
 Provides high-performance Legendre summation for spherical harmonic

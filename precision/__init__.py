@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """PZHA (Precision-Zoned Hybrid Architecture) precision management.
 
 SDA (Software-Defined Abstraction) extensions:
@@ -7,15 +9,15 @@ SDA (Software-Defined Abstraction) extensions:
   - PolicyEngine: runtime policy compilation
 """
 
-from pytorch_src.precision.policy import (
+from tornado_gcm.precision.policy import (
     DEFAULT_POLICY,
     PolicyEngine,
     PrecisionPolicy,
     PrecisionZone,
 )
-from pytorch_src.precision.zone_cast import zone_cast, zone_boundary, f64_math, einsum_highest
-from pytorch_src.precision.monitor import PrecisionMonitor
-from pytorch_src.precision.sda import (
+from tornado_gcm.precision.zone_cast import zone_cast, zone_boundary, f64_math, einsum_highest
+from tornado_gcm.precision.monitor import PrecisionMonitor
+from tornado_gcm.precision.sda import (
     SDAConfig,
     SDAController,
     SDAReport,
@@ -27,16 +29,16 @@ from pytorch_src.precision.sda import (
     SparseConfig,
     DEFAULT_SDA_CONFIG,
 )
-from pytorch_src.precision.profiler import SDAProfiler, ProfilerMetrics, GradientStats
-from pytorch_src.precision.scheduler import PrecisionScheduler, SchedulerDecision
-from pytorch_src.precision.sensitivity import (
+from tornado_gcm.precision.profiler import SDAProfiler, ProfilerMetrics, GradientStats
+from tornado_gcm.precision.scheduler import PrecisionScheduler, SchedulerDecision
+from tornado_gcm.precision.sensitivity import (
     SensitivityProfiler,
     SensitivityMap,
     ModuleSensitivity,
     ValidatorFn,
     default_conservation_validator,
 )
-from pytorch_src.precision.zone_discovery import (
+from tornado_gcm.precision.zone_discovery import (
     ZoneDiscovery,
     ModuleGraph,
     DiscoveryResult,

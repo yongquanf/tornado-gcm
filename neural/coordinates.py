@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Neural-level coordinate containers — PyTorch implementation.
 
 Lightweight wrappers around core coordinate objects that provide
@@ -12,8 +14,8 @@ from typing import Optional
 import numpy as np
 import torch
 
-from pytorch_src.core import sigma_coordinates as sigma_mod
-from pytorch_src.core import hybrid_coordinates as hybrid_mod
+from tornado_gcm.core import sigma_coordinates as sigma_mod
+from tornado_gcm.core import hybrid_coordinates as hybrid_mod
 
 
 @dataclasses.dataclass(frozen=True)

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Distributed training utilities for NeuralGCM.
 
 Provides DDP and FSDP wrappers for multi-GPU training,
@@ -6,7 +8,7 @@ plus DTensor-based tensor-parallel sharding.
 This is the Phase 5 implementation (was design-decision-skip in MVP).
 """
 
-from pytorch_src.distributed.ddp import (
+from tornado_gcm.distributed.ddp import (
     DDPConfig,
     FSDPConfig,
     setup_distributed,
@@ -21,7 +23,7 @@ from pytorch_src.distributed.ddp import (
     get_distributed_sampler,
 )
 
-from pytorch_src.distributed.dtensor_sharding import (
+from tornado_gcm.distributed.dtensor_sharding import (
     DTensorShardingSpec,
     SpectralShardingContext,
     create_device_mesh,

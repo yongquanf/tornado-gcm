@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Utilities for nested multi-frequency scan (unrolling).
 
 Implements the PyTorch equivalent of JAX's ``_recursive_scan`` and

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """FusedAdvanceKernel: torch.compile-based fused zone-cast advance (O9-1).
 
 Wraps NeuralGCMModel.step() with torch.compile to fuse the multi-step
@@ -23,7 +25,7 @@ from typing import Any, Optional
 import torch
 import torch.nn as nn
 
-from pytorch_src.precision.policy import PrecisionPolicy
+from tornado_gcm.precision.policy import PrecisionPolicy
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Spherical harmonics basis and differential operators — PyTorch implementation.
 
 Zones:
@@ -18,9 +20,9 @@ from typing import Any, Callable, Optional
 import numpy as np
 import torch
 
-from pytorch_src.core import associated_legendre
-from pytorch_src.core import fourier
-from pytorch_src.precision.zone_cast import einsum_highest
+from tornado_gcm.core import associated_legendre
+from tornado_gcm.core import fourier
+from tornado_gcm.precision.zone_cast import einsum_highest
 
 
 # ═══════════════════════════════════════════════════════════════════════════

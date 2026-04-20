@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Primitive equations data structures, diagnostics, and RHS — PyTorch.
 
 This module provides:
@@ -19,11 +21,11 @@ from typing import Any, Callable, Mapping, Optional
 import numpy as np
 import torch
 
-from pytorch_src.core import coordinate_systems
-from pytorch_src.core import sigma_coordinates as sigma_mod
-from pytorch_src.core import spherical_harmonic
-from pytorch_src.core import time_integration
-from pytorch_src.precision.zone_cast import einsum_highest
+from tornado_gcm.core import coordinate_systems
+from tornado_gcm.core import sigma_coordinates as sigma_mod
+from tornado_gcm.core import spherical_harmonic
+from tornado_gcm.core import time_integration
+from tornado_gcm.precision.zone_cast import einsum_highest
 
 
 @dataclasses.dataclass

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """AcceleratorRegistry: priority-based operator implementation registry.
 
 Maps operator names to their best available implementation, selecting
@@ -178,14 +180,14 @@ def _register_builtin_operators(registry: AcceleratorRegistry) -> None:
 
     Called once when the global registry is first created.
     """
-    from pytorch_src.precision.accelerator.triton_sht import (
+    from tornado_gcm.precision.accelerator.triton_sht import (
         sht_legendre_inverse_torch,
         sht_legendre_forward_torch,
         sht_legendre_inverse_triton,
         sht_legendre_forward_triton,
         has_triton as sht_has_triton,
     )
-    from pytorch_src.precision.accelerator.triton_fixers import (
+    from tornado_gcm.precision.accelerator.triton_fixers import (
         sphere_integrate_torch,
         spectral_norm_torch,
         sphere_integrate_triton,

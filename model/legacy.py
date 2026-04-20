@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Legacy compatibility: PressureLevelModel wrapper.
 
 Provides a simplified API that accepts pressure-level inputs (like ERA5)
@@ -144,7 +146,7 @@ class PressureLevelModel(nn.Module):
 
     def inputs_from_xarray(self, dataset) -> dict[str, torch.Tensor]:
         """Convert xarray Dataset to model inputs."""
-        from pytorch_src.training.data_pipeline import inputs_from_xarray
+        from tornado_gcm.training.data_pipeline import inputs_from_xarray
         import numpy as np
         data = inputs_from_xarray(dataset, self.config.input_variables)
         return {k: torch.from_numpy(v).float() for k, v in data.items()
@@ -152,7 +154,7 @@ class PressureLevelModel(nn.Module):
 
     def forcings_from_xarray(self, dataset) -> dict[str, torch.Tensor]:
         """Convert xarray Dataset to forcing dict."""
-        from pytorch_src.training.data_pipeline import forcings_from_xarray
+        from tornado_gcm.training.data_pipeline import forcings_from_xarray
         import numpy as np
         data = forcings_from_xarray(dataset, self.config.forcing_variables)
         return {k: torch.from_numpy(v).float() for k, v in data.items()

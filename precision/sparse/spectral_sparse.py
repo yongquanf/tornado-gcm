@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Spectral sparse State representations.
 
 Provides:
@@ -13,7 +15,7 @@ from typing import Optional
 
 import torch
 
-from pytorch_src.precision.sparse.ops import triangular_mask
+from tornado_gcm.precision.sparse.ops import triangular_mask
 
 
 @dataclasses.dataclass

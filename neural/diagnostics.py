@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Physics diagnostics — energy, mass, precipitation extractors.
 
 Provides:
@@ -14,8 +16,8 @@ from typing import Any, Callable, Dict, Optional, Sequence
 
 import torch
 
-from pytorch_src.core import primitive_equations
-from pytorch_src.neural.fixers import compute_total_energy, compute_dry_air_mass
+from tornado_gcm.core import primitive_equations
+from tornado_gcm.neural.fixers import compute_total_energy, compute_dry_air_mass
 
 
 def extract_energies(

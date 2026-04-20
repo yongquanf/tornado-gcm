@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Vertical interpolation between sigma and pressure levels — PyTorch.
 
 Provides linear interpolation with constant extrapolation plus conservative
@@ -12,8 +14,8 @@ from typing import Any, Callable, Dict, Sequence, Union
 import numpy as np
 import torch
 
-from pytorch_src.core import hybrid_coordinates as hybrid_mod
-from pytorch_src.core import sigma_coordinates
+from tornado_gcm.core import hybrid_coordinates as hybrid_mod
+from tornado_gcm.core import sigma_coordinates
 
 
 # ═══════════════════════════════════════════════════════════════════════════

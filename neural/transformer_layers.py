@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Transformer layers — PyTorch implementation.
 
 Zone: Z3 (BF16) — attention and NN computation in bfloat16.

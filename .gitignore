@@ -1,0 +1,59 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# ---------- Virtual environments ----------
+.venv/
+venv/
+env/
+.conda/
+
+# ---------- IDE / Editor ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+
+# ---------- PyTorch / Model weights ----------
+*.pt
+*.pth
+*.onnx
+*.safetensors
+checkpoints/
+weights/
+
+# ---------- Data artifacts ----------
+*.zarr/
+*.nc
+*.grib
+*.grib2
+
+# ---------- Testing / Coverage ----------
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Misc ----------
+*.log
+*.bak
+*.tmp
+.env

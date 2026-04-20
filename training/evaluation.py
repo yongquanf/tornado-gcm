@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Evaluation runner for NeuralGCM PyTorch training.
 
 Implements:
@@ -176,7 +178,7 @@ def get_forecast_starts_balanced(
 
 def _state_to_tensor_dict(state) -> dict[str, torch.Tensor]:
     """Convert a State to a flat dict of named tensors."""
-    from pytorch_src.core.primitive_equations import State
+    from tornado_gcm.core.primitive_equations import State
 
     if isinstance(state, State):
         d = {
@@ -579,7 +581,7 @@ class EvaluationRunner:
 
         Extracts the first ``n_samples`` batches from the dataloader.
         """
-        from pytorch_src.scripts.data_preprocessing import batch_to_train_pair
+        from tornado_gcm.scripts.data_preprocessing import batch_to_train_pair
 
         n = n_samples or self.config.n_eval_samples
         K = rollout_steps or self.config.rollout_steps or 16

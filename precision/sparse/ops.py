@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Sparse spectral operations: masks, thresholding, memory estimation.
 
 Spherical harmonic coefficient matrices have a natural triangular

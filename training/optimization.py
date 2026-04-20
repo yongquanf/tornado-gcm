@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Optimizer utilities for NeuralGCM training.
 
 Implements:
@@ -186,7 +188,7 @@ class StopGradientTrajectory:
 
 def _detach_state(state):
     """Detach all tensors in a state (supports State dataclass, dict, or tensor)."""
-    from pytorch_src.core.primitive_equations import State
+    from tornado_gcm.core.primitive_equations import State
     if isinstance(state, State):
         return state.tree_map(lambda t: t.detach().requires_grad_(t.requires_grad))
     elif isinstance(state, dict):

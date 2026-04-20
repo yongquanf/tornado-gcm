@@ -1,11 +1,13 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """SDAStorageManager: variable-level mixed-precision storage.
 
 Routes variables to ExactCodec or LossyCodec based on StorageConfig,
 providing write/read/estimate_storage operations.
 
 Usage:
-    from pytorch_src.precision.storage import SDAStorageManager
-    from pytorch_src.precision.sda import StorageConfig
+    from tornado_gcm.precision.storage import SDAStorageManager
+    from tornado_gcm.precision.sda import StorageConfig
 
     mgr = SDAStorageManager(StorageConfig())
     mgr.write({"vorticity": tensor_v, "tracers": tensor_t}, "output/run1")
@@ -23,8 +25,8 @@ from typing import Any, Optional
 import numpy as np
 import torch
 
-from pytorch_src.precision.sda import StorageConfig
-from pytorch_src.precision.storage.codec import ExactCodec, LossyCodec, _EncodedTensor
+from tornado_gcm.precision.sda import StorageConfig
+from tornado_gcm.precision.storage.codec import ExactCodec, LossyCodec, _EncodedTensor
 
 logger = logging.getLogger(__name__)
 

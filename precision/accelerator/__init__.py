@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Accelerator backend package for SDA mixed-precision framework.
 
 Provides:
@@ -8,24 +10,24 @@ Provides:
   - triton_fixers: Triton / PyTorch conservation reduction kernels
 """
 
-from pytorch_src.precision.accelerator.registry import (
+from tornado_gcm.precision.accelerator.registry import (
     AcceleratorRegistry,
     get_global_registry,
 )
-from pytorch_src.precision.accelerator.fused_zone_cast import FusedAdvanceKernel
-from pytorch_src.precision.accelerator.compile_backend import (
+from tornado_gcm.precision.accelerator.fused_zone_cast import FusedAdvanceKernel
+from tornado_gcm.precision.accelerator.compile_backend import (
     configure_dynamo,
     configure_matmul_precision,
     register_state_pytree,
     benchmark_compile,
 )
-from pytorch_src.precision.accelerator.triton_sht import (
+from tornado_gcm.precision.accelerator.triton_sht import (
     sht_legendre_inverse,
     sht_legendre_forward,
     sht_legendre_inverse_torch,
     sht_legendre_forward_torch,
 )
-from pytorch_src.precision.accelerator.triton_fixers import (
+from tornado_gcm.precision.accelerator.triton_fixers import (
     sphere_integrate,
     spectral_norm,
     sphere_integrate_torch,

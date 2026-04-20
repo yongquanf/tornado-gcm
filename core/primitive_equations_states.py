@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Primitive equation state construction helpers — PyTorch implementation.
 
 Provides initial conditions for standard test cases:
@@ -14,9 +16,9 @@ from typing import Any, Callable, Optional
 import numpy as np
 import torch
 
-from pytorch_src.core import coordinate_systems
-from pytorch_src.core import primitive_equations
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import coordinate_systems
+from tornado_gcm.core import primitive_equations
+from tornado_gcm.core import spherical_harmonic
 
 # Keys for aux_features dict
 OROGRAPHY = "orography"

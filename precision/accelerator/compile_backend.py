@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """torch.compile backend configuration for SDA framework.
 
 Handles:
@@ -7,7 +9,7 @@ Handles:
   4. Benchmark utilities for compile vs eager comparison
 
 Usage:
-    from pytorch_src.precision.accelerator.compile_backend import (
+    from tornado_gcm.precision.accelerator.compile_backend import (
         configure_dynamo, register_state_pytree, benchmark_compile,
     )
     register_state_pytree()        # call once before compile
@@ -46,7 +48,7 @@ def register_state_pytree() -> None:
         return
 
     try:
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
     except ImportError:
         logger.debug("State not importable, skipping pytree registration")
         return

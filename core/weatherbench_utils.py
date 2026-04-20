@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """WeatherBench-compatible state structure — PyTorch implementation."""
 
 from __future__ import annotations

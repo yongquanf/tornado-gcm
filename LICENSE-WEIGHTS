@@ -1,0 +1,54 @@
+Creative Commons Attribution-ShareAlike 4.0 International License
+for Pre-trained Model Weights
+
+================================================================
+TornadoGCM Pre-trained Weights License
+================================================================
+
+Copyright 2026 yongquan fu
+
+The pre-trained model weights distributed with or alongside
+TornadoGCM are licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International License (CC BY-SA 4.0).
+
+You are free to:
+  Share  — copy and redistribute the weights in any medium or format
+  Adapt  — remix, transform, and build upon the weights for any
+            purpose, even commercially
+
+Under the following terms:
+  Attribution    — You must give appropriate credit, provide a link to
+                   the license, and indicate if changes were made. You
+                   may do so in any reasonable manner, but not in any
+                   way that suggests the licensor endorses you or your use.
+  ShareAlike     — If you remix, transform, or build upon the weights,
+                   you must distribute your contributions under the same
+                   license as the original.
+  No additional  — You may not apply legal terms or technological
+  restrictions     measures that legally restrict others from doing
+                   anything the license permits.
+
+Full license text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+================================================================
+Attribution Notice
+================================================================
+
+The model architecture is a PyTorch reimplementation derived from
+NeuralGCM (Google Research):
+
+  Kochkov, D., Yuval, J., Langmore, I., Norgaard, P., Smith, J.,
+  Mooers, G., ... & Hoyer, S. (2024). Neural general circulation
+  models for weather and climate. Nature, 632, 1060-1066.
+  https://doi.org/10.1038/s41586-024-07744-y
+
+  Original JAX code: https://github.com/google-research/neuralgcm
+  Original license:  Apache License 2.0
+
+TornadoGCM is an independent, non-official PyTorch port. It is not
+affiliated with or endorsed by Google Research or DeepMind.
+
+The pre-trained weights were produced by training the TornadoGCM
+PyTorch implementation and may have been initialised from converted
+JAX checkpoints. Any such converted weights remain subject to the
+attribution requirements of the original NeuralGCM project.

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Neural mappings: NodalMapping and NodalVolumeMapping — PyTorch.
 
 Pack pytree features → NN tower → unpack to target shapes.

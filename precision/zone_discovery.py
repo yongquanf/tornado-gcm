@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """HPS Level-2: Automatic Zone Discovery via Sensitivity Clustering.
 
 Takes a SensitivityMap from Level-1 and produces an optimal zone partition:
@@ -12,8 +14,8 @@ Theoretical backing:
   - Approximation ratio: CostRatio(Ẑ)/CostRatio(Z*) ≤ 1 + O(1/K).
 
 Usage:
-    from pytorch_src.precision.sensitivity import SensitivityProfiler
-    from pytorch_src.precision.zone_discovery import ZoneDiscovery
+    from tornado_gcm.precision.sensitivity import SensitivityProfiler
+    from tornado_gcm.precision.zone_discovery import ZoneDiscovery
 
     smap = profiler.run_hierarchical(init_state, n_steps=200)
     discovery = ZoneDiscovery(smap, module_graph)
@@ -30,8 +32,8 @@ from typing import Optional
 import numpy as np
 import torch
 
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.sensitivity import SensitivityMap
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.sensitivity import SensitivityMap
 
 logger = logging.getLogger(__name__)
 

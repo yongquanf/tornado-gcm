@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Gap-tolerant data loading for NeuralGCM training.
 
 Implements GapTolerantSampling that handles datasets with missing timesteps
@@ -177,7 +179,7 @@ def build_dataloader(
     """
     dataset = TrajectoryDataset(data, times, window_length, max_missing_rate)
     if use_distributed_sampler:
-        from pytorch_src.distributed import get_distributed_sampler
+        from tornado_gcm.distributed import get_distributed_sampler
         sampler = get_distributed_sampler(dataset)
         if sampler is None:
             # Single-process: fall back to gap-tolerant weighted sampling

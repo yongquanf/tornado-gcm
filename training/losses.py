@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Physics-constrained losses for NeuralGCM training.
 
 Implements:
@@ -16,7 +18,7 @@ from typing import Sequence
 
 import torch
 import torch.nn as nn
-from pytorch_src.precision.zone_cast import f64_math
+from tornado_gcm.precision.zone_cast import f64_math
 
 
 class TrajectoryMSE(nn.Module):
@@ -27,7 +29,7 @@ class TrajectoryMSE(nn.Module):
 
     def _state_mse(self, pred, tgt) -> torch.Tensor:
         """MSE between two State objects."""
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         total = torch.tensor(0.0, device=pred.vorticity.device)
         total = total + ((pred.vorticity - tgt.vorticity) ** 2).mean()
         total = total + ((pred.divergence - tgt.divergence) ** 2).mean()
@@ -40,7 +42,7 @@ class TrajectoryMSE(nn.Module):
         predictions: list,
         targets: list,
     ) -> torch.Tensor:
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         total = torch.tensor(0.0)
         for pred, tgt in zip(predictions, targets):
             if isinstance(pred, State):
@@ -54,7 +56,7 @@ class TrajectoryMAE(nn.Module):
     """Mean absolute error over a rollout trajectory."""
 
     def _state_mae(self, pred, tgt) -> torch.Tensor:
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         total = torch.tensor(0.0, device=pred.vorticity.device)
         total = total + (pred.vorticity - tgt.vorticity).abs().mean()
         total = total + (pred.divergence - tgt.divergence).abs().mean()
@@ -63,7 +65,7 @@ class TrajectoryMAE(nn.Module):
         return total
 
     def forward(self, predictions: list, targets: list) -> torch.Tensor:
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         total = torch.tensor(0.0)
         for pred, tgt in zip(predictions, targets):
             if isinstance(pred, State):
@@ -391,7 +393,7 @@ class PhysicsConstrainedLoss(nn.Module):
 
 def _state_to_modal_dict(state) -> dict[str, torch.Tensor]:
     """Extract modal (spectral) fields from a State object as a dict."""
-    from pytorch_src.core.primitive_equations import State
+    from tornado_gcm.core.primitive_equations import State
     if isinstance(state, State):
         d = {
             "vorticity": state.vorticity,
@@ -697,7 +699,7 @@ class NeuralGCMLoss(nn.Module):
         evaporation: torch.Tensor | None = None,
         step: int = 0,
     ) -> dict[str, torch.Tensor]:
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         device = (
             predictions[0].vorticity.device
             if isinstance(predictions[0], State)

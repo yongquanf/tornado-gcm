@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Vertical coordinate system for multi-layer shallow water equations."""
 
 from __future__ import annotations

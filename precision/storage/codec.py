@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """ExactCodec and LossyCodec: encode/decode tensors for storage.
 
 ExactCodec: dtype-preserving → optional compression (zstd/lz4).

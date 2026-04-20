@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Feature transforms — PyTorch implementation.
 
 Provides:
@@ -17,7 +19,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import spherical_harmonic
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -125,7 +127,7 @@ class NondimensionalizeTransform(nn.Module):
         # Precompute scale factors
         self._scale_factors: Dict[str, float] = {}
         for key, unit_str in self.mapping.items():
-            from pytorch_src import scales
+            from tornado_gcm import scales
             q = 1.0 * scales.units(unit_str)
             self._scale_factors[key] = self.physics_specs.nondimensionalize(q)
 

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Atmospheric model assembly — PyTorch implementation.
 
 Provides AtmosphericModel: assembles dynamics core, neural parameterization,
@@ -19,15 +21,15 @@ from typing import Callable, Dict, List, Optional, Sequence
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import coordinate_systems
-from pytorch_src.core import filtering
-from pytorch_src.core import primitive_equations as pe
-from pytorch_src.core import time_integration
-from pytorch_src.model.api import ModelConfig, NeuralGCMModel, VectorizedModel  # noqa: F401
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.zone_cast import zone_cast
-from pytorch_src.typing import ModelState, RandomnessState
-from pytorch_src.units import SimUnits
+from tornado_gcm.core import coordinate_systems
+from tornado_gcm.core import filtering
+from tornado_gcm.core import primitive_equations as pe
+from tornado_gcm.core import time_integration
+from tornado_gcm.model.api import ModelConfig, NeuralGCMModel, VectorizedModel  # noqa: F401
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.zone_cast import zone_cast
+from tornado_gcm.typing import ModelState, RandomnessState
+from tornado_gcm.units import SimUnits
 
 
 @dataclasses.dataclass

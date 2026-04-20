@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Sparse spectral representations for SDA framework.
 
 Provides:
@@ -8,15 +10,15 @@ Provides:
   - sparse_ops: mask generation and adaptive thresholding
 """
 
-from pytorch_src.precision.sparse.spectral_sparse import (
+from tornado_gcm.precision.sparse.spectral_sparse import (
     SparseConfig,
     SpectralSparseState,
     MixedPrecisionSparse,
 )
-from pytorch_src.precision.sparse.adaptive_sparse import (
+from tornado_gcm.precision.sparse.adaptive_sparse import (
     SparseSpectralTransform,
 )
-from pytorch_src.precision.sparse.ops import (
+from tornado_gcm.precision.sparse.ops import (
     triangular_mask,
     adaptive_threshold_mask,
     memory_savings_ratio,

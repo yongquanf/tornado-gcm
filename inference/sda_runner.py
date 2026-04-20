@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """SDA-enhanced inference runner.
 
 Extends MPInference with:
@@ -14,9 +16,9 @@ from typing import Any, Callable, Optional
 
 import torch
 
-from pytorch_src.inference.runner import MPInference
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.sda import SDAConfig, SDAController
+from tornado_gcm.inference.runner import MPInference
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.sda import SDAConfig, SDAController
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +194,7 @@ class SDAInference(MPInference):
         Returns:
             (trajectory, stats) where stats includes memory savings info.
         """
-        from pytorch_src.precision.sparse.spectral_sparse import (
+        from tornado_gcm.precision.sparse.spectral_sparse import (
             SparseConfig,
             SpectralSparseState,
         )

@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Feature extraction modules for NeuralGCM — PyTorch implementation.
 
 Provides:
@@ -21,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import spherical_harmonic
 
 
 # ═══════════════════════════════════════════════════════════════════════════

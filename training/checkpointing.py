@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Checkpoint utilities for NeuralGCM.
 
 Saves/loads model + optimizer + EMA parameters + training state.

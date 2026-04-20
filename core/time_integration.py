@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Implicit–explicit time integration routines — PyTorch implementation.
 
 This module provides IMEX ODE solvers (Crank-Nicolson + RK, IMEX RK, etc.)
@@ -15,8 +17,8 @@ from typing import Any, Callable, Optional, Sequence, TypeVar, Union
 
 import torch
 
-from pytorch_src.core import filtering
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import filtering
+from tornado_gcm.core import spherical_harmonic
 
 
 # ═══════════════════════════════════════════════════════════════════════════

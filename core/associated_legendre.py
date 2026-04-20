@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Associated Legendre function evaluation and Gauss-Legendre quadrature.
 
 Pure NumPy implementation (Z0 — FP64 numerical foundation).

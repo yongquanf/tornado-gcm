@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """SDA-enhanced trainer with automated precision scheduling.
 
 Extends MixedPrecisionTrainer with:
@@ -16,8 +18,8 @@ from typing import Any, Callable, Iterator, Optional, Sequence
 import torch
 import torch.nn as nn
 
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
-from pytorch_src.precision.sda import SDAConfig, SDAController, SDAReport
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.sda import SDAConfig, SDAController, SDAReport
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class SDATrainer:
         max_grad_norm: float = 1.0,
         ema_num_steps: int = 1999,
     ) -> None:
-        from pytorch_src.training.trainer import MixedPrecisionTrainer
+        from tornado_gcm.training.trainer import MixedPrecisionTrainer
 
         self.sda_config = sda_config or SDAConfig()
         self.controller = SDAController(self.sda_config)

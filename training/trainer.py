@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Mixed-precision trainer with variable precision 3-phase training.
 
 Key components:
@@ -18,8 +20,8 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint_util
 
-from pytorch_src.distributed import all_reduce_metrics
-from pytorch_src.precision.policy import PrecisionPolicy, PrecisionZone
+from tornado_gcm.distributed import all_reduce_metrics
+from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +241,7 @@ class MixedPrecisionTrainer:
         z3_dtype = self.policy.compute_dtype(PrecisionZone.Z3_NEURAL_NETWORK)
 
         # Move batch to model device
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         def _to_device(obj):
             if isinstance(obj, State):
                 return obj.tree_map(lambda t: t.to(device))
@@ -272,7 +274,7 @@ class MixedPrecisionTrainer:
         # Compute physics diagnostics if model uses State objects
         diagnostics = {}
         if isinstance(predictions[0], State):
-            from pytorch_src.neural.diagnostics import compute_trajectory_diagnostics
+            from tornado_gcm.neural.diagnostics import compute_trajectory_diagnostics
             diagnostics = compute_trajectory_diagnostics(predictions, init_state)
 
         # Compute loss
@@ -356,7 +358,7 @@ class MixedPrecisionTrainer:
         Returns:
             (trajectory, initial_state).
         """
-        from pytorch_src.core.scan_utils import nested_rollout
+        from tornado_gcm.core.scan_utils import nested_rollout
 
         final, trajectory = nested_rollout(
             step_fn=self._raw_model.step,
@@ -476,7 +478,7 @@ def nested_checkpoint_scan(
         if isinstance(s, torch.Tensor):
             return (s,), None
         # Assume State dataclass with tree_map / known fields
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         if isinstance(s, State):
             tracer_keys = sorted(s.tracers.keys())
             tensors = (
@@ -492,7 +494,7 @@ def nested_checkpoint_scan(
         """Reconstruct a State (or plain Tensor) from flat tensors + metadata."""
         if meta is None:
             return tensors[0]
-        from pytorch_src.core.primitive_equations import State
+        from tornado_gcm.core.primitive_equations import State
         n_fixed = 4
         tracers = {k: tensors[n_fixed + i] for i, k in enumerate(meta["tracer_keys"])}
         return State(

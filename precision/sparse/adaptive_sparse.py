@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Sparse-aware spectral transform with split-precision Legendre.
 
 SparseSpectralTransform wraps a RealSphericalHarmonics and performs
@@ -11,7 +13,7 @@ from typing import Optional
 
 import torch
 
-from pytorch_src.precision.sparse.spectral_sparse import (
+from tornado_gcm.precision.sparse.spectral_sparse import (
     MixedPrecisionSparse,
     SparseConfig,
 )

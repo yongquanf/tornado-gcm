@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """SDA (Software-Defined Abstraction) mixed-precision framework.
 
 Control-plane / data-plane architecture for automated precision management.
@@ -16,11 +18,11 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 
-from pytorch_src.precision.policy import DEFAULT_POLICY, PrecisionPolicy, PrecisionZone
+from tornado_gcm.precision.policy import DEFAULT_POLICY, PrecisionPolicy, PrecisionZone
 
 if TYPE_CHECKING:
-    from pytorch_src.precision.profiler import ProfilerMetrics, SDAProfiler
-    from pytorch_src.precision.scheduler import PrecisionScheduler, SchedulerDecision
+    from tornado_gcm.precision.profiler import ProfilerMetrics, SDAProfiler
+    from tornado_gcm.precision.scheduler import PrecisionScheduler, SchedulerDecision
 
 logger = logging.getLogger(__name__)
 
@@ -306,8 +308,8 @@ class SDAController:
     """
 
     def __init__(self, config: SDAConfig) -> None:
-        from pytorch_src.precision.profiler import SDAProfiler
-        from pytorch_src.precision.scheduler import PrecisionScheduler
+        from tornado_gcm.precision.profiler import SDAProfiler
+        from tornado_gcm.precision.scheduler import PrecisionScheduler
 
         self.config = config
         self._policy = config.policy
@@ -361,7 +363,7 @@ class SDAController:
         if self.config.accelerator.backend == "eager":
             return
         try:
-            from pytorch_src.precision.accelerator import (
+            from tornado_gcm.precision.accelerator import (
                 AcceleratorRegistry,
                 configure_dynamo,
                 register_state_pytree,
@@ -379,7 +381,7 @@ class SDAController:
     def _init_storage(self) -> None:
         """Lazily initialise the storage manager from config."""
         try:
-            from pytorch_src.precision.storage import SDAStorageManager
+            from tornado_gcm.precision.storage import SDAStorageManager
             self._storage = SDAStorageManager(self.config.storage)
         except ImportError:
             logger.debug("Storage package not available")
@@ -395,7 +397,7 @@ class SDAController:
         if self._fused_kernel is not None:
             return self._fused_kernel
         try:
-            from pytorch_src.precision.accelerator import FusedAdvanceKernel
+            from tornado_gcm.precision.accelerator import FusedAdvanceKernel
             self._fused_kernel = FusedAdvanceKernel(
                 model,
                 self._policy,

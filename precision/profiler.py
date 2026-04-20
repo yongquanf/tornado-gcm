@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """SDAProfiler: runtime precision + performance detection module.
 
 Extends PrecisionMonitor with:
@@ -21,9 +23,9 @@ from typing import Any, Optional
 
 import torch
 
-from pytorch_src.precision.monitor import PrecisionMonitor
-from pytorch_src.precision.policy import PrecisionZone
-from pytorch_src.precision.sda import ProfilerConfig
+from tornado_gcm.precision.monitor import PrecisionMonitor
+from tornado_gcm.precision.policy import PrecisionZone
+from tornado_gcm.precision.sda import ProfilerConfig
 
 logger = logging.getLogger(__name__)
 

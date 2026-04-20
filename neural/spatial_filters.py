@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Spatial filters as nn.Module — PyTorch implementation.
 
 Provides ExponentialModalFilter and related spectral-space filters
@@ -10,8 +12,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pytorch_src.core import filtering
-from pytorch_src.core import spherical_harmonic
+from tornado_gcm.core import filtering
+from tornado_gcm.core import spherical_harmonic
 
 
 class ExponentialModalFilter(nn.Module):

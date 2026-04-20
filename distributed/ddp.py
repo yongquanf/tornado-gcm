@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """DDP and FSDP wrappers for NeuralGCM distributed training.
 
 Implements:
@@ -287,7 +289,7 @@ def wrap_fsdp(
             config.dtensor_state_layout,
             config.dtensor_config_path or "<none>",
         )
-        from pytorch_src.distributed.dtensor_sharding import maybe_enable_dtensor_sharding
+        from tornado_gcm.distributed.dtensor_sharding import maybe_enable_dtensor_sharding
         model = maybe_enable_dtensor_sharding(model, config)
 
     # Sharding strategy
@@ -326,7 +328,7 @@ def wrap_fsdp(
     if config.auto_wrap_policy == "size_based":
         wrap_policy = size_based_auto_wrap_policy
     elif config.auto_wrap_policy == "transformer":
-        from pytorch_src.neural.transformer_layers import TransformerEncoderBlock
+        from tornado_gcm.neural.transformer_layers import TransformerEncoderBlock
         wrap_policy = functools.partial(
             transformer_auto_wrap_policy,
             transformer_layer_cls={TransformerEncoderBlock},

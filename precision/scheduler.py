@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """PrecisionScheduler: adaptive precision strategy dispatch.
 
 Implements three scheduling modes:
@@ -15,11 +17,11 @@ from typing import TYPE_CHECKING, Optional
 
 import torch
 
-from pytorch_src.precision.policy import PrecisionPolicy
-from pytorch_src.precision.sda import SchedulerConfig
+from tornado_gcm.precision.policy import PrecisionPolicy
+from tornado_gcm.precision.sda import SchedulerConfig
 
 if TYPE_CHECKING:
-    from pytorch_src.precision.profiler import ProfilerMetrics
+    from tornado_gcm.precision.profiler import ProfilerMetrics
 
 logger = logging.getLogger(__name__)
 

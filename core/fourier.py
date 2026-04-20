@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Real Fourier basis evaluation and derivative coefficients.
 
 Z0 (Numerical Foundation): Basis matrices computed in float64.

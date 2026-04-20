@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """PrecisionPolicy: configurable precision strategy for PZHA zones.
 
 Defines the four precision zones (Z0-Z3) and their dtype assignments.

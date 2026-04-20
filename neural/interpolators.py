@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Neural-level vertical interpolators — PyTorch implementation.
 
 Provides:
@@ -13,14 +15,14 @@ from typing import Dict, Literal, Optional, Sequence, Union
 import numpy as np
 import torch
 
-from pytorch_src.core import vertical_interpolation as vi
-from pytorch_src.core import sigma_coordinates as sigma_mod
-from pytorch_src.neural.coordinates import (
+from tornado_gcm.core import vertical_interpolation as vi
+from tornado_gcm.core import sigma_coordinates as sigma_mod
+from tornado_gcm.neural.coordinates import (
     SigmaLevels,
     HybridLevels,
     PressureLevels,
 )
-from pytorch_src.units import SimUnits
+from tornado_gcm.units import SimUnits
 
 
 def _source_pressures(

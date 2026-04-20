@@ -1,3 +1,5 @@
+﻿# Copyright 2026 yongquan fu
+# SPDX-License-Identifier: Apache-2.0
 """Load JAX NeuralGCM checkpoint into a PyTorch model.
 
 Provides:
@@ -37,9 +39,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pytorch_src.neural.standard_layers import Mlp, Epd, ConvLevel
-from pytorch_src.neural.towers import ForwardTower, VerticalConvTower
-from pytorch_src import scales
+from tornado_gcm.neural.standard_layers import Mlp, Epd, ConvLevel
+from tornado_gcm.neural.towers import ForwardTower, VerticalConvTower
+from tornado_gcm import scales
 
 logger = logging.getLogger(__name__)
 
@@ -895,13 +897,13 @@ def build_jax_aligned_experiment_model(
     Returns:
         (model, neural_components, coords, config, summary)
     """
-    from pytorch_src.scripts.data_preprocessing import build_coords_from_csv
-    from pytorch_src.core import coordinate_systems as core_coords
-    from pytorch_src.core import filtering
-    from pytorch_src.core import sigma_coordinates as sigma_mod
-    from pytorch_src.neural.fixers import F64ConservationFixer
-    from pytorch_src.neural.parameterizations import JaxAlignedDivCurlParameterization
-    from pytorch_src.neural.features import (
+    from tornado_gcm.scripts.data_preprocessing import build_coords_from_csv
+    from tornado_gcm.core import coordinate_systems as core_coords
+    from tornado_gcm.core import filtering
+    from tornado_gcm.core import sigma_coordinates as sigma_mod
+    from tornado_gcm.neural.fixers import F64ConservationFixer
+    from tornado_gcm.neural.parameterizations import JaxAlignedDivCurlParameterization
+    from tornado_gcm.neural.features import (
         CombinedFeatures,
         VelocityAndPrognostics,
         MemoryVelocityAndValues,
@@ -913,7 +915,7 @@ def build_jax_aligned_experiment_model(
         EmbeddingVolumeFeatures,
         LearnedPositionalFeatures,
     )
-    from pytorch_src.neural.transforms import (
+    from tornado_gcm.neural.transforms import (
         ShiftAndNormalize,
         InverseShiftAndNormalize,
         InverseLevelScale,
@@ -922,9 +924,9 @@ def build_jax_aligned_experiment_model(
         ToModalDiffOperators,
         TendencyTransform,
     )
-    from pytorch_src.model.api import ModelConfig, NeuralGCMModel
-    from pytorch_src.precision.policy import PrecisionPolicy
-    from pytorch_src.units import SimUnits
+    from tornado_gcm.model.api import ModelConfig, NeuralGCMModel
+    from tornado_gcm.precision.policy import PrecisionPolicy
+    from tornado_gcm.units import SimUnits
     import xarray as xr
 
     # Build coordinates matching the JAX checkpoint grid (TL63 = 128x64 nodal,
