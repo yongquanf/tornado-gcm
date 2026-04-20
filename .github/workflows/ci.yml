@@ -9,6 +9,9 @@ on:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .github
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
@@ -28,7 +31,7 @@ jobs:
 
       - name: Define targets
         run: |
-          echo "TARGETS=__init__.py cli.py scales.py typing.py units.py core neural model inference training precision distributed" >> $GITHUB_ENV
+          echo "TARGETS=../__init__.py ../cli.py ../scales.py ../typing.py ../units.py ../core ../neural ../model ../inference ../training ../precision ../distributed" >> $GITHUB_ENV
 
       - name: Ruff lint
         run: ruff check $TARGETS --exit-zero
@@ -43,12 +46,12 @@ jobs:
         run: mypy --ignore-missing-imports --follow-imports=skip cli.py || true
 
       - name: Compile smoke check
-        run: python -m compileall -q .
+        run: python -m compileall -q ..
 
       - name: Pytest
         run: |
-          if [ -d tests ]; then
-            pytest tests/ -v --tb=short
+          if [ -d ../tests ]; then
+            pytest ../tests -v --tb=short
           else
             echo "No tests/ directory yet; skipping pytest in bootstrap phase."
           fi
