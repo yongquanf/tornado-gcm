@@ -1,0 +1,57 @@
+# SDA Configuration: NeuralGCM 0.7° (256×128 grid, L=127)
+# Conservative high-resolution profile
+
+policy:
+  z0_dtype: float64
+  z1_compute_dtype: float32
+  z1_use_tf32: true                  # Still beneficial at 0.7°
+  z1_storage_dtype: float32
+  z2_compute_dtype: float64
+  z2_storage_dtype: float32
+  z3_compute_dtype: bfloat16
+  z3_param_dtype: bfloat16
+  z3_master_dtype: float32
+  data_load_dtype: float32
+  sht_adaptive_threshold: 42         # L=127 > 42 → SHT uses FP64
+  enable_precision_audit: true
+  audit_every_n_steps: 50
+
+profiler:
+  enabled: true
+  granularity: zone
+  sample_rate: 5                     # More frequent at high-res
+  performance_counters: true         # Track GPU kernel timing
+  numerical_audit: true
+  gradient_audit: true
+  spectral_audit: true               # Monitor high-freq energy
+  export_format: tensorboard
+
+scheduler:
+  mode: stability_aware              # High-res: prioritise stability
+  check_interval: 50
+  loss_plateau_threshold: 0.005
+  loss_plateau_patience: 5
+  nan_trigger_count: 1               # Aggressive NaN recovery
+  grad_var_threshold: 50.0           # Tighter gradient threshold
+  spectral_tail_threshold: 0.05
+  warmup_steps_after_switch: 10
+
+accelerator:
+  backend: eager
+  enable_fused_zone_cast: false
+  compile_mode: reduce-overhead
+
+storage:
+  mode: mixed
+  compressor: zstd
+  compression_level: 5               # Higher compression for large output
+  critical_variables:
+    - vorticity
+    - divergence
+    - log_surface_pressure
+    - temperature_variation
+  non_critical_variables:
+    - tracers
+
+sparse:
+  enabled: false

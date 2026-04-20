@@ -1,0 +1,54 @@
+# SDA Configuration: NeuralGCM 1.4° (64×32 grid, L=32)
+# Standard training profile with loss-aware scheduling
+
+policy:
+  z0_dtype: float64                  # Legendre bases, sigma coords
+  z1_compute_dtype: float32          # SH transforms, primitive eqs
+  z1_use_tf32: true                  # TF32 matmul acceleration
+  z1_storage_dtype: float32
+  z2_compute_dtype: float64          # Conservation fixers
+  z2_storage_dtype: float32
+  z3_compute_dtype: bfloat16         # NN forward/backward
+  z3_param_dtype: bfloat16           # NN param storage
+  z3_master_dtype: float32           # Master weights (training)
+  data_load_dtype: float32
+  sht_adaptive_threshold: 42         # L<=42 → FP32/TF32, L>42 → FP64
+  enable_precision_audit: true
+  audit_every_n_steps: 100
+
+profiler:
+  enabled: true
+  granularity: zone
+  sample_rate: 10
+  performance_counters: false
+  numerical_audit: true
+  gradient_audit: true
+  spectral_audit: false
+  export_format: tensorboard
+
+scheduler:
+  mode: loss_aware                   # O9-3: advance phase on loss plateau
+  check_interval: 100
+  loss_plateau_threshold: 0.01
+  loss_plateau_patience: 3
+  nan_trigger_count: 2
+  warmup_steps_after_switch: 5
+
+accelerator:
+  backend: eager                     # P2: change to torch_compile / triton
+  enable_fused_zone_cast: false
+  compile_mode: reduce-overhead
+
+storage:
+  mode: mixed
+  compressor: zstd
+  compression_level: 3
+  critical_variables:
+    - vorticity
+    - divergence
+    - log_surface_pressure
+  non_critical_variables:
+    - tracers
+
+sparse:
+  enabled: false

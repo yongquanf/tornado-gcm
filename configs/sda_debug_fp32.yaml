@@ -1,0 +1,42 @@
+# SDA Configuration: Debug (all FP32, no mixed precision)
+# For debugging numerical issues — disable all precision optimisation
+
+policy:
+  z0_dtype: float64
+  z1_compute_dtype: float32
+  z1_use_tf32: false                 # No TF32
+  z1_storage_dtype: float32
+  z2_compute_dtype: float64
+  z2_storage_dtype: float32
+  z3_compute_dtype: float32          # NN in FP32 (no BF16)
+  z3_param_dtype: float32
+  z3_master_dtype: float32
+  data_load_dtype: float32
+  sht_adaptive_threshold: 0          # Always use FP64 for SHT
+  enable_precision_audit: true
+  audit_every_n_steps: 1             # Audit every step
+
+profiler:
+  enabled: true
+  granularity: module                # Per-module profiling
+  sample_rate: 1                     # Every step
+  performance_counters: false
+  numerical_audit: true
+  gradient_audit: true
+  spectral_audit: true
+  export_format: json
+
+scheduler:
+  mode: milestone                    # Fixed phase schedule (simplest)
+  check_interval: 100
+
+accelerator:
+  backend: eager
+  enable_fused_zone_cast: false
+
+storage:
+  mode: exact                        # No lossy compression
+  compressor: none
+
+sparse:
+  enabled: false

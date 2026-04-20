@@ -1,0 +1,102 @@
+# SDA Configuration: NeuralGCM 2.8° Full Training
+# Full training cycle for SOSP paper evaluation (P0 requirement)
+#
+# Target: complete 3-phase training with Day-3/Day-5 RMSE evaluation
+# Hardware: single NVIDIA A100 80GB
+# Expected duration: ~8-12 hours for 50K steps
+
+model:
+  resolution: "2.8"                  # 64×32 grid, T21
+  spectral_truncation: 21
+  vertical_levels: 13
+  dycore_substeps: 8
+  dt: 1800                           # 30-min outer step
+
+training:
+  total_steps: 50000
+  batch_size: 16
+  base_learning_rate: 1.0e-3
+  optimizer: adam
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  lr_schedule: cosine_with_warmup
+  lr_warmup_steps: 1000
+  max_grad_norm: 1.0
+  ema_num_steps: 1999
+  # Phase budget fractions: 60% / 30% / 10%
+  phase_budgets: [0.60, 0.30, 0.10]
+  # Phase rollout steps
+  phase_rollouts: [4, 12, 24]
+
+  # Evaluation checkpoints
+  eval_interval: 5000                # Evaluate every 5K steps
+  checkpoint_interval: 10000         # Checkpoint every 10K steps
+  eval_forecast_days: [3, 5, 10]     # Headline forecast lead times
+
+data:
+  source: era5_arco                  # GCP ARCO-ERA5
+  train_start: "1979-01-01"
+  train_end: "2019-12-31"
+  eval_start: "2020-01-01"
+  eval_end: "2020-12-31"
+  temporal_resolution_hours: 6
+  num_eval_forecasts: 100            # 100 ICs for eval
+
+policy:
+  z0_dtype: float64                  # Legendre bases, sigma coords
+  z1_compute_dtype: float32          # SH transforms, primitive eqs
+  z1_use_tf32: true                  # TF32 matmul acceleration
+  z1_storage_dtype: float32
+  z2_compute_dtype: float64          # Conservation fixers (essential)
+  z2_storage_dtype: float32
+  z3_compute_dtype: bfloat16         # NN forward/backward
+  z3_param_dtype: bfloat16           # NN param storage
+  z3_master_dtype: float32           # Master weights (training)
+  data_load_dtype: float32
+  sht_adaptive_threshold: 42
+  enable_precision_audit: true
+  audit_every_n_steps: 500
+
+fixer:
+  use_lite: true                     # Z2-Lite: no full-tensor upcast
+  cadence: 1                         # Apply every step (1=every step)
+  fix_mass: true
+  fix_energy: true
+
+profiler:
+  enabled: true
+  granularity: zone
+  sample_rate: 100
+  performance_counters: false
+  numerical_audit: true
+  gradient_audit: true
+  spectral_audit: false
+  export_format: tensorboard
+
+scheduler:
+  mode: loss_aware
+  check_interval: 500
+  loss_plateau_threshold: 0.02
+  loss_plateau_patience: 5
+  nan_trigger_count: 2
+  warmup_steps_after_switch: 10      # Decouple policy/rollout changes
+  rollout_ramp_steps: 50             # Linear ramp K over 50 steps
+
+accelerator:
+  backend: eager
+  enable_fused_zone_cast: false
+  compile_mode: reduce-overhead
+
+storage:
+  mode: mixed
+  compressor: zstd
+  compression_level: 3
+  critical_variables:
+    - vorticity
+    - divergence
+    - log_surface_pressure
+  non_critical_variables:
+    - tracers
+
+sparse:
+  enabled: false
