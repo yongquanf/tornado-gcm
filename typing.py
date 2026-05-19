@@ -5,17 +5,17 @@
 from __future__ import annotations
 
 import dataclasses
-import importlib.util
+from importlib.machinery import SourceFileLoader
 import sys
 import sysconfig
 from pathlib import Path
 
 if __name__ == "typing":
-    # Compatibility guard: this repository ships `typing.py`, which can shadow
-    # the standard library module when running tools from repo root.
+    # Compatibility guard: this branch runs only when this file is imported as
+    # top-level `typing` (shadowing stdlib typing from repo root execution).
     _stdlib_typing_path = Path(sysconfig.get_paths()["stdlib"]) / "typing.py"
-    _code = _stdlib_typing_path.read_text(encoding="utf-8")
-    exec(compile(_code, str(_stdlib_typing_path), "exec"), globals(), globals())
+    _loader = SourceFileLoader("typing", str(_stdlib_typing_path))
+    _loader.exec_module(sys.modules[__name__])
     sys.modules["typing"] = sys.modules[__name__]
 else:
     from typing import Any, Callable, Generic, Mapping, Optional, TypeVar, Union

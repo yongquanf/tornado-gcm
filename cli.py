@@ -12,6 +12,8 @@ import types
 import click
 
 if "tornado_gcm" not in sys.modules:
+    # Support direct script execution (`python cli.py ...`) in source tree
+    # where package install is unavailable; exposes repo root as `tornado_gcm`.
     _repo_root = pathlib.Path(__file__).resolve().parent
     _pkg = types.ModuleType("tornado_gcm")
     _pkg.__path__ = [str(_repo_root)]  # type: ignore[attr-defined]

@@ -291,7 +291,9 @@ class PrecisionBenchmark:
         x = torch.randn(shape, device=self.device, dtype=dtype)
         y = torch.randn(shape, device=self.device, dtype=dtype)
 
-        timer = TimingBenchmark(warmup=min(3, self.n_steps), iterations=self.n_steps)
+        iterations = max(5, self.n_steps)
+        warmup = min(3, max(1, iterations // 2))
+        timer = TimingBenchmark(warmup=warmup, iterations=iterations)
         timing = timer.time_fn("matmul", torch.matmul, x, y)
         memory = MemoryBenchmark.measure(torch.matmul, x, y, device=self.device)
 
@@ -301,7 +303,7 @@ class PrecisionBenchmark:
         return PrecisionBenchmarkRun(
             device=self.device,
             dtype=str(dtype).replace("torch.", ""),
-            steps=self.n_steps,
+            steps=iterations,
             timing=timing,
             memory=memory,
             nan_count=nan_count,
