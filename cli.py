@@ -6,9 +6,18 @@ from __future__ import annotations
 
 import logging
 import pathlib
-from typing import Optional
+import sys
+import types
 
 import click
+
+if "tornado_gcm" not in sys.modules:
+    # Support direct script execution (`python cli.py ...`) in source tree
+    # where package install is unavailable; exposes repo root as `tornado_gcm`.
+    _repo_root = pathlib.Path(__file__).resolve().parent
+    _pkg = types.ModuleType("tornado_gcm")
+    _pkg.__path__ = [str(_repo_root)]  # type: ignore[attr-defined]
+    sys.modules["tornado_gcm"] = _pkg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,8 +43,8 @@ def main() -> None:
 @click.option("--use-sda/--no-sda", default=True, show_default=True, help="Enable SDA precision scheduler.")
 def train(
     config: str,
-    checkpoint: Optional[str],
-    jax_weights: Optional[str],
+    checkpoint: str | None,
+    jax_weights: str | None,
     steps: int,
     batch_size: int,
     device: str,
