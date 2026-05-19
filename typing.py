@@ -1,178 +1,190 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Commonly used type aliases for the PyTorch NeuralGCM codebase."""
 
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Callable, Generic, Mapping, Optional, TypeVar, Union
+import importlib.util
+import sys
+import sysconfig
+from pathlib import Path
 
-import torch
-import numpy as np
+if __name__ == "typing":
+    # Compatibility guard: this repository ships `typing.py`, which can shadow
+    # the standard library module when running tools from repo root.
+    _stdlib_typing_path = Path(sysconfig.get_paths()["stdlib"]) / "typing.py"
+    _spec = importlib.util.spec_from_file_location("typing", _stdlib_typing_path)
+    if _spec is None or _spec.loader is None:
+        raise ImportError(f"Unable to load stdlib typing from {_stdlib_typing_path}")
+    _stdlib_typing = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_stdlib_typing)
+    sys.modules["typing"] = _stdlib_typing
+    globals().update(_stdlib_typing.__dict__)
+else:
+    from typing import Any, Callable, Generic, Mapping, Optional, TypeVar, Union
 
-# ---------------------------------------------------------------------------
-# Array / numeric types
-# ---------------------------------------------------------------------------
-Tensor = torch.Tensor
-Array = Union[np.ndarray, torch.Tensor]
-ArrayOrArrayTuple = Union[Array, tuple[Array, ...]]
-Numeric = Union[float, int, torch.Tensor]
+    import numpy as np
+    import torch
 
-PRNGKeyArray = Any  # torch.Generator or seed integer
+    # ---------------------------------------------------------------------------
+    # Array / numeric types
+    # ---------------------------------------------------------------------------
+    Tensor = torch.Tensor
+    Array = Union[np.ndarray, torch.Tensor]
+    ArrayOrArrayTuple = Union[Array, tuple[Array, ...]]
+    Numeric = Union[float, int, torch.Tensor]
 
-# ---------------------------------------------------------------------------
-# Generic state types
-# ---------------------------------------------------------------------------
-PyTreeState = TypeVar("PyTreeState")
-Pytree = Any
-PyTreeMemory = Pytree
-PyTreeDiagnostics = Pytree
+    PRNGKeyArray = Any  # torch.Generator or seed integer
 
-AuxFeatures = dict[str, Any]
-DataState = dict[str, Any]
-ForcingData = dict[str, Any]
+    # ---------------------------------------------------------------------------
+    # Generic state types
+    # ---------------------------------------------------------------------------
+    PyTreeState = TypeVar("PyTreeState")
+    Pytree = Any
+    PyTreeMemory = Pytree
+    PyTreeDiagnostics = Pytree
 
+    AuxFeatures = dict[str, Any]
+    DataState = dict[str, Any]
+    ForcingData = dict[str, Any]
 
-# ---------------------------------------------------------------------------
-# Key with cos-lat factor (used in spectral transformations)
-# ---------------------------------------------------------------------------
-@dataclasses.dataclass(eq=True, order=True, frozen=True)
-class KeyWithCosLatFactor:
-    """A key described by `name` and an integer `factor_order`."""
+    # ---------------------------------------------------------------------------
+    # Key with cos-lat factor (used in spectral transformations)
+    # ---------------------------------------------------------------------------
+    @dataclasses.dataclass(eq=True, order=True, frozen=True)
+    class KeyWithCosLatFactor:
+        """A key described by `name` and an integer `factor_order`."""
 
-    name: str
-    factor_order: int
-    filter_strength: float = 0.0
+        name: str
+        factor_order: int
+        filter_strength: float = 0.0
 
+    # ---------------------------------------------------------------------------
+    # RandomnessState  (replaces tree_math.struct version)
+    # ---------------------------------------------------------------------------
+    @dataclasses.dataclass
+    class RandomnessState:
+        """Representation of random states on the sphere.
 
-# ---------------------------------------------------------------------------
-# RandomnessState  (replaces tree_math.struct version)
-# ---------------------------------------------------------------------------
-@dataclasses.dataclass
-class RandomnessState:
-    """Representation of random states on the sphere.
+        Attributes:
+            core: internal representation of the random state.
+            nodal_value: random field values in the nodal representation.
+            modal_value: random field values in the modal representation.
+            prng_key: underlying PRNG key (torch.Generator or seed).
+            prng_step: optional iteration counter for PRNG key management.
+        """
 
-    Attributes:
-        core: internal representation of the random state.
-        nodal_value: random field values in the nodal representation.
-        modal_value: random field values in the modal representation.
-        prng_key: underlying PRNG key (torch.Generator or seed).
-        prng_step: optional iteration counter for PRNG key management.
-    """
+        core: Pytree | None = None
+        nodal_value: Pytree | None = None
+        modal_value: Pytree | None = None
+        prng_key: PRNGKeyArray | None = None
+        prng_step: int | None = None
 
-    core: Pytree | None = None
-    nodal_value: Pytree | None = None
-    modal_value: Pytree | None = None
-    prng_key: PRNGKeyArray | None = None
-    prng_step: int | None = None
+    # ---------------------------------------------------------------------------
+    # ModelState  (replaces tree_math.struct Generic version)
+    # ---------------------------------------------------------------------------
+    @dataclasses.dataclass
+    class ModelState(Generic[PyTreeState]):
+        """PyTreeState decomposed into deterministic and perturbation components.
 
+        Attributes:
+            state: Prognostic variables describing the state of the atmosphere.
+            memory: Optional model fields/predictions providing past time context.
+            diagnostics: Optional diagnostic values computed in the model space.
+            randomness: An optional random field for stochastic perturbation.
+        """
 
-# ---------------------------------------------------------------------------
-# ModelState  (replaces tree_math.struct Generic version)
-# ---------------------------------------------------------------------------
-@dataclasses.dataclass
-class ModelState(Generic[PyTreeState]):
-    """PyTreeState decomposed into deterministic and perturbation components.
+        state: PyTreeState
+        memory: Pytree = None
+        diagnostics: Pytree = dataclasses.field(default_factory=dict)
+        randomness: RandomnessState = dataclasses.field(
+            default_factory=RandomnessState
+        )
 
-    Attributes:
-        state: Prognostic variables describing the state of the atmosphere.
-        memory: Optional model fields/predictions providing past time context.
-        diagnostics: Optional diagnostic values computed in the model space.
-        randomness: An optional random field for stochastic perturbation.
-    """
+    # ---------------------------------------------------------------------------
+    # TrajectoryRepresentations
+    # ---------------------------------------------------------------------------
+    @dataclasses.dataclass
+    class TrajectoryRepresentations:
+        """Dataclass that holds trajectories in all default representations."""
 
-    state: PyTreeState
-    memory: Pytree = None
-    diagnostics: Pytree = dataclasses.field(default_factory=dict)
-    randomness: RandomnessState = dataclasses.field(
-        default_factory=RandomnessState
-    )
+        data_nodal_trajectory: Pytree
+        data_modal_trajectory: Pytree
+        model_nodal_trajectory: Pytree
+        model_modal_trajectory: Pytree
 
+        def get_representation(
+            self, *, is_nodal: bool, is_encoded: bool
+        ) -> Pytree:
+            """Retrieves representation based on `is_nodal`, `is_encoded`."""
+            key = (is_nodal, is_encoded)
+            lookup = {
+                (True, True): self.model_nodal_trajectory,
+                (True, False): self.data_nodal_trajectory,
+                (False, True): self.model_modal_trajectory,
+                (False, False): self.data_modal_trajectory,
+            }
+            return lookup[key]
 
-# ---------------------------------------------------------------------------
-# TrajectoryRepresentations
-# ---------------------------------------------------------------------------
-@dataclasses.dataclass
-class TrajectoryRepresentations:
-    """Dataclass that holds trajectories in all default representations."""
+    # ---------------------------------------------------------------------------
+    # Callable type aliases
+    # ---------------------------------------------------------------------------
+    State = TypeVar("State")
+    StateFn = Callable[[State], State]
+    InverseFn = Callable[[State, Tensor], State]
+    StepFn = Callable[[State, State], State]
+    FilterFn = Callable[[State, State, State], tuple[State, State]]
 
-    data_nodal_trajectory: Pytree
-    data_modal_trajectory: Pytree
-    model_nodal_trajectory: Pytree
-    model_modal_trajectory: Pytree
+    ScanFn = Callable[..., Any]
+    PytreeFn = Callable[[Pytree], Pytree]
+    PyTreeTermsFn = Callable[[PyTreeState], PyTreeState]
+    PyTreeInverseFn = Callable[[PyTreeState, Numeric], PyTreeState]
+    TimeStepFn = Callable[[PyTreeState], PyTreeState]
+    PyTreeFilterFn = Callable[[PyTreeState], PyTreeState]
+    PyTreeStepFilterFn = Callable[[PyTreeState, PyTreeState], PyTreeState]
+    PyTreeStepFilterModule = Callable[..., PyTreeStepFilterFn]
 
-    def get_representation(
-        self, *, is_nodal: bool, is_encoded: bool
-    ) -> Pytree:
-        """Retrieves representation based on `is_nodal`, `is_encoded`."""
-        key = (is_nodal, is_encoded)
-        lookup = {
-            (True, True): self.model_nodal_trajectory,
-            (True, False): self.data_nodal_trajectory,
-            (False, True): self.model_modal_trajectory,
-            (False, False): self.data_modal_trajectory,
-        }
-        return lookup[key]
+    Forcing = Pytree
+    ForcingFn = Callable[[ForcingData, float], Forcing]
+    ForcingModule = Callable[..., ForcingFn]
 
+    PostProcessFn = Callable[..., Any]
+    Params = Optional[Mapping[str, Mapping[str, Array]]]
 
-# ---------------------------------------------------------------------------
-# Callable type aliases
-# ---------------------------------------------------------------------------
-State = TypeVar("State")
-StateFn = Callable[[State], State]
-InverseFn = Callable[[State, Tensor], State]
-StepFn = Callable[[State, State], State]
-FilterFn = Callable[[State, State, State], tuple[State, State]]
-
-ScanFn = Callable[..., Any]
-PytreeFn = Callable[[Pytree], Pytree]
-PyTreeTermsFn = Callable[[PyTreeState], PyTreeState]
-PyTreeInverseFn = Callable[[PyTreeState, Numeric], PyTreeState]
-TimeStepFn = Callable[[PyTreeState], PyTreeState]
-PyTreeFilterFn = Callable[[PyTreeState], PyTreeState]
-PyTreeStepFilterFn = Callable[[PyTreeState, PyTreeState], PyTreeState]
-PyTreeStepFilterModule = Callable[..., PyTreeStepFilterFn]
-
-Forcing = Pytree
-ForcingFn = Callable[[ForcingData, float], Forcing]
-ForcingModule = Callable[..., ForcingFn]
-
-PostProcessFn = Callable[..., Any]
-Params = Optional[Mapping[str, Mapping[str, Array]]]
-
-StepFn = Callable[[PyTreeState, Optional[Forcing]], PyTreeState]  # type: ignore[assignment]
-StepModule = Callable[..., StepFn]
-CorrectorFn = Callable[
-    [PyTreeState, Optional[PyTreeState], Optional[Forcing]], PyTreeState
-]
-CorrectorModule = Callable[..., CorrectorFn]
-ParameterizationFn = Callable[
-    [
+    StepFn = Callable[[PyTreeState, Optional[Forcing]], PyTreeState]  # type: ignore[assignment]
+    StepModule = Callable[..., StepFn]
+    CorrectorFn = Callable[
+        [PyTreeState, Optional[PyTreeState], Optional[Forcing]], PyTreeState
+    ]
+    CorrectorModule = Callable[..., CorrectorFn]
+    ParameterizationFn = Callable[
+        [
+            PyTreeState,
+            Optional[PyTreeMemory],
+            Optional[PyTreeDiagnostics],
+            Optional[RandomnessState],
+            Optional[Forcing],
+        ],
         PyTreeState,
-        Optional[PyTreeMemory],
-        Optional[PyTreeDiagnostics],
-        Optional[RandomnessState],
-        Optional[Forcing],
-    ],
-    PyTreeState,
-]
-ParameterizationModule = Callable[..., ParameterizationFn]
-TrajectoryFn = Callable[..., tuple[Any, Any]]
-TransformFn = Callable[[Pytree], Pytree]
-TransformModule = Callable[..., TransformFn]
+    ]
+    ParameterizationModule = Callable[..., ParameterizationFn]
+    TrajectoryFn = Callable[..., tuple[Any, Any]]
+    TransformFn = Callable[[Pytree], Pytree]
+    TransformModule = Callable[..., TransformFn]
 
-GatingFactory = Callable[..., Callable[[Tensor, Tensor], Tensor]]
-TowerFactory = Callable[..., Callable[..., Any]]
-LayerFactory = Callable[..., Callable[..., Any]]
+    GatingFactory = Callable[..., Callable[[Tensor, Tensor], Tensor]]
+    TowerFactory = Callable[..., Callable[..., Any]]
+    LayerFactory = Callable[..., Callable[..., Any]]
 
-EmbeddingFn = Callable[
-    [
+    EmbeddingFn = Callable[
+        [
+            Pytree,
+            Optional[PyTreeMemory],
+            Optional[PyTreeDiagnostics],
+            Optional[RandomnessState],
+            Optional[Forcing],
+        ],
         Pytree,
-        Optional[PyTreeMemory],
-        Optional[PyTreeDiagnostics],
-        Optional[RandomnessState],
-        Optional[Forcing],
-    ],
-    Pytree,
-]
-EmbeddingModule = Callable[..., EmbeddingFn]
+    ]
+    EmbeddingModule = Callable[..., EmbeddingFn]

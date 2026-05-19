@@ -229,3 +229,80 @@ class StorageBenchmark:
             "throughput_mb_s": round(throughput_mbs, 2),
             "total_data_mb": round(total_bytes / (1024 ** 2), 2),
         }
+
+
+@dataclass
+class PrecisionBenchmarkRun:
+    """Aggregate output for CLI precision benchmark."""
+
+    device: str
+    dtype: str
+    steps: int
+    timing: BenchmarkResult
+    memory: dict[str, float]
+    nan_count: int
+
+    def report(self) -> str:
+        """Render a human-readable benchmark report."""
+        lines = [
+            "=" * 70,
+            "Precision Benchmark Report",
+            "=" * 70,
+            f"device={self.device}",
+            f"dtype={self.dtype}",
+            f"steps={self.steps}",
+            "",
+            (
+                "timing: "
+                f"mean={self.timing.mean_ms:.3f}ms "
+                f"std={self.timing.std_ms:.3f}ms "
+                f"min={self.timing.min_ms:.3f}ms "
+                f"max={self.timing.max_ms:.3f}ms "
+                f"(n={self.timing.iterations})"
+            ),
+            f"memory: {self.memory}",
+            f"nan_count={self.nan_count}",
+            "=" * 70,
+        ]
+        return "\n".join(lines)
+
+
+class PrecisionBenchmark:
+    """Simple precision/performance benchmark used by the CLI."""
+
+    def __init__(self, sda_config: Any, device: str = "cuda", n_steps: int = 20) -> None:
+        self.sda_config = sda_config
+        self.n_steps = max(1, int(n_steps))
+        if device == "cuda" and not torch.cuda.is_available():
+            logger.warning("CUDA requested but unavailable; falling back to CPU")
+            self.device = "cpu"
+        else:
+            self.device = device
+
+    def _sample_dtype(self) -> torch.dtype:
+        policy = getattr(self.sda_config, "policy", None)
+        if policy is None:
+            return torch.float32
+        return getattr(policy, "z1_compute_dtype", torch.float32)
+
+    def run(self) -> PrecisionBenchmarkRun:
+        dtype = self._sample_dtype()
+        shape = (1024, 1024) if self.device == "cuda" else (512, 512)
+        x = torch.randn(shape, device=self.device, dtype=dtype)
+        y = torch.randn(shape, device=self.device, dtype=dtype)
+
+        timer = TimingBenchmark(warmup=min(3, self.n_steps), iterations=self.n_steps)
+        timing = timer.time_fn("matmul", torch.matmul, x, y)
+        memory = MemoryBenchmark.measure(torch.matmul, x, y, device=self.device)
+
+        out = torch.matmul(x, y)
+        nan_count = int(torch.isnan(out).sum().item())
+
+        return PrecisionBenchmarkRun(
+            device=self.device,
+            dtype=str(dtype).replace("torch.", ""),
+            steps=self.n_steps,
+            timing=timing,
+            memory=memory,
+            nan_count=nan_count,
+        )
