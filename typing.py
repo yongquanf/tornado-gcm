@@ -14,13 +14,9 @@ if __name__ == "typing":
     # Compatibility guard: this repository ships `typing.py`, which can shadow
     # the standard library module when running tools from repo root.
     _stdlib_typing_path = Path(sysconfig.get_paths()["stdlib"]) / "typing.py"
-    _spec = importlib.util.spec_from_file_location("typing", _stdlib_typing_path)
-    if _spec is None or _spec.loader is None:
-        raise ImportError(f"Unable to load stdlib typing from {_stdlib_typing_path}")
-    _stdlib_typing = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_stdlib_typing)
-    sys.modules["typing"] = _stdlib_typing
-    globals().update(_stdlib_typing.__dict__)
+    _code = _stdlib_typing_path.read_text(encoding="utf-8")
+    exec(compile(_code, str(_stdlib_typing_path), "exec"), globals(), globals())
+    sys.modules["typing"] = sys.modules[__name__]
 else:
     from typing import Any, Callable, Generic, Mapping, Optional, TypeVar, Union
 
