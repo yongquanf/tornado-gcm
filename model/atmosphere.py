@@ -28,7 +28,7 @@ from tornado_gcm.core import time_integration
 from tornado_gcm.model.api import ModelConfig, NeuralGCMModel, VectorizedModel  # noqa: F401
 from tornado_gcm.precision.policy import PrecisionPolicy, PrecisionZone
 from tornado_gcm.precision.zone_cast import zone_cast
-from tornado_gcm.typing import ModelState, RandomnessState
+from tornado_gcm.type_aliases import ModelState, RandomnessState
 from tornado_gcm.units import SimUnits
 
 

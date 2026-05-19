@@ -31,7 +31,7 @@ jobs:
 
       - name: Define targets
         run: |
-          echo "TARGETS=../__init__.py ../cli.py ../scales.py ../typing.py ../units.py ../core ../neural ../model ../inference ../training ../precision ../distributed" >> $GITHUB_ENV
+          echo "TARGETS=../__init__.py ../cli.py ../scales.py ../type_aliases.py ../units.py ../core ../neural ../model ../inference ../training ../precision ../distributed" >> $GITHUB_ENV
 
       - name: Ruff lint
         run: ruff check $TARGETS --exit-zero

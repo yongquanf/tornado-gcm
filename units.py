@@ -8,7 +8,7 @@ import dataclasses
 from typing import Protocol
 
 from tornado_gcm import scales
-from tornado_gcm import typing as typing_
+from tornado_gcm import type_aliases as typing_
 import numpy as np
 
 Quantity = typing_.Numeric
