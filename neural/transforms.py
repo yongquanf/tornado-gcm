@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Feature transforms — PyTorch implementation.
 
@@ -175,8 +175,8 @@ class ToModalWithDivCurl(nn.Module):
         v = out.pop(self.v_key, None)
 
         grid = self.grid
-        sec2 = torch.tensor(
-            grid.sec2_lat, dtype=u.dtype if u is not None else torch.float32,
+        sec2 = grid._buf._sec2_lat_torch.to(
+            dtype=u.dtype if u is not None else torch.float32,
             device=next(iter(out.values())).device if out else torch.device("cpu"),
         )
 
@@ -218,7 +218,13 @@ class TendencyTransform(nn.Module):
         clip_max: Optional[Dict[str, float]] = None,
     ):
         super().__init__()
-        self.level_scales = level_scales or {}
+        _scales = level_scales or {}
+        self._level_scale_keys: list[str] = []
+        for i, (k, v) in enumerate(_scales.items()):
+            _name = f"_lscale_{i}"
+            self.register_buffer(_name, v.clone(), persistent=False)
+            self._level_scale_keys.append(k)
+        self.level_scales = _scales  # dict updated in place by forward
         self.clip_min = clip_min or {}
         self.clip_max = clip_max or {}
 
@@ -226,12 +232,14 @@ class TendencyTransform(nn.Module):
         out = {}
         for key, val in inputs.items():
             if key in self.level_scales:
-                scale = self.level_scales[key]
-                if isinstance(scale, torch.Tensor):
-                    scale = scale.to(val.device, val.dtype)
-                    shape = [1] * val.ndim
-                    shape[-3] = -1
-                    scale = scale.reshape(shape)
+                # Use registered buffer (moved to GPU by model.to(device))
+                _bname = f"_lscale_{self._level_scale_keys.index(key)}"
+                scale = getattr(self, _bname)
+                if scale.dtype != val.dtype:
+                    scale = scale.to(dtype=val.dtype)
+                shape = [1] * val.ndim
+                shape[-3] = -1
+                scale = scale.reshape(shape)
                 val = val * scale
             if key in self.clip_min:
                 val = torch.clamp(val, min=self.clip_min[key])
@@ -282,6 +290,8 @@ class SoftClip(nn.Module):
         return h * torch.nn.functional.softplus(x / h)
 
     def _clip_fn(self, x: torch.Tensor) -> torch.Tensor:
+        # Guard against NaN/Inf from numerical blow-up in upstream ops.
+        x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
         inner = self._softplus(x - self._low)
         outer = self._softplus(self._range - inner)
         return -outer * self._range / self._sp_range + self._high
@@ -316,7 +326,7 @@ class InverseLevelScale(nn.Module):
         out = {}
         for key, val in inputs.items():
             if key in self.keys_to_scale:
-                inv_s = self._inv_scales.to(device=val.device, dtype=val.dtype)
+                inv_s = self._inv_scales.to(dtype=val.dtype)
                 # Reshape to (n_levels, 1, 1) for broadcasting
                 shape = [1] * val.ndim
                 shape[0] = -1
@@ -419,7 +429,7 @@ class ToModalDiffOperators(nn.Module):
         features: Dict[tuple[str, int], torch.Tensor] = {}
         for key, value in inputs.items():
             name, cos_lat_order = key
-            d_dlon, d_dlat = self.grid.cos_lat_grad(value, clip=False)
+            d_dlon, d_dlat = self.grid.cos_lat_grad(value, clip=True)
             laplacian_value = self.grid.laplacian(value)
             features[(name + "_dlon", cos_lat_order + 1)] = d_dlon
             features[(name + "_dlat", cos_lat_order + 1)] = d_dlat

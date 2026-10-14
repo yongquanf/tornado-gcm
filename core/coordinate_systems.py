@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Coordinate system combining horizontal grid and vertical coordinates.
 
@@ -11,12 +11,13 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Callable, Sequence, Union
 
-import numpy as np
 import torch
+import torch.nn as nn
 
 from tornado_gcm.core import layer_coordinates
 from tornado_gcm.core import sigma_coordinates
 from tornado_gcm.core import spherical_harmonic
+from tornado_gcm.precision.zone_cast import einsum_highest
 
 
 HorizontalGridTypes = spherical_harmonic.Grid
@@ -27,8 +28,8 @@ VerticalCoordinateTypes = Union[
 ]
 
 
-@dataclasses.dataclass(frozen=True)
-class CoordinateSystem:
+@dataclasses.dataclass
+class CoordinateSystem(nn.Module):
     """Combined horizontal and vertical grid data.
 
     Attributes:
@@ -38,6 +39,37 @@ class CoordinateSystem:
 
     horizontal: HorizontalGridTypes
     vertical: VerticalCoordinateTypes
+
+    def __init__(self, horizontal, vertical):
+        nn.Module.__init__(self)
+        self.horizontal = horizontal
+        self.vertical = vertical
+        self._horizontal_einsum_highest: Any = None  # set by get_spectral_interpolate_fn
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __eq__(self, other):
+        return self is other
+        # Pre-compute a high-precision Grid so compute_diagnostic_state
+        # never needs with_einsum() in the hot path (avoids numpy→torch
+        # conversions and .to(device=) calls inside the compiled region).
+        object.__setattr__(
+            self, "_horizontal_einsum_highest",
+            self.horizontal.with_einsum(einsum_highest),
+        )
+
+    def to(self, device: torch.device | str) -> None:
+        """Migrate all Grids to *device*."""
+        _device = torch.device(device)
+        if hasattr(self.horizontal, "to"):
+            self.horizontal.to(_device)
+        if hasattr(self, "_horizontal_einsum_highest") and hasattr(
+            self._horizontal_einsum_highest, "to"
+        ):
+            self._horizontal_einsum_highest.to(_device)
+        if hasattr(self.vertical, "to"):
+            self.vertical.to(_device)
 
     @property
     def nodal_shape(self) -> tuple[int, int, int]:
@@ -56,6 +88,29 @@ class CoordinateSystem:
         return (1,) + self.horizontal.modal_shape
 
 
+# Register CoordinateSystem as a pytree node.  Its children are themselves
+# pytree-registered (Grid, SigmaCoordinates, HybridCoordinates) so Dynamo
+# recursively traces their tensor children with correct device propagation.
+def __coords_flatten(cs: CoordinateSystem):
+    children = (
+        cs.horizontal,
+        cs.vertical,
+        cs._horizontal_einsum_highest,
+    )
+    return children, {}
+
+
+def __coords_unflatten(children, _context):
+    horizontal, vertical, einsum_highest = children
+    cs = CoordinateSystem(horizontal=horizontal, vertical=vertical)
+    object.__setattr__(cs, "_horizontal_einsum_highest", einsum_highest)
+    return cs
+
+
+from torch.utils._pytree import register_pytree_node as _reg_pytree_cs
+_reg_pytree_cs(CoordinateSystem, __coords_flatten, __coords_unflatten)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Spectral interpolation helpers
 # ═══════════════════════════════════════════════════════════════════════════
@@ -67,6 +122,12 @@ def _tree_map_tensors(
     """Apply fn to all Tensor leaves in a pytree-like structure."""
     if isinstance(x, torch.Tensor):
         return fn(x)
+    elif dataclasses.is_dataclass(x) and not isinstance(x, type):
+        mapped = {
+            field.name: _tree_map_tensors(fn, getattr(x, field.name))
+            for field in dataclasses.fields(x)
+        }
+        return dataclasses.replace(x, **mapped)
     elif isinstance(x, dict):
         return {k: _tree_map_tensors(fn, v) for k, v in x.items()}
     elif isinstance(x, (list, tuple)):

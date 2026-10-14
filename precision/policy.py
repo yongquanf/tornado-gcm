@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """PrecisionPolicy: configurable precision strategy for PZHA zones.
 
@@ -14,6 +14,7 @@ Zones:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import enum
 from typing import Optional
@@ -59,6 +60,12 @@ class PrecisionPolicy:
     z1_use_tf32: bool = True  # Enable TF32 matmul acceleration on GPU
     z1_storage_dtype: torch.dtype = torch.float32
 
+    # Z1 sub-zone overrides (DAG-discovered fine-grained assignment).
+    # When None, inherit from z1_compute_dtype (backward compatible).
+    z1_sht_dtype: Optional[torch.dtype] = None       # SHT transforms (einsum)
+    z1_imex_dtype: Optional[torch.dtype] = None       # IMEX solver (linalg)
+    z1_diagnostic_dtype: Optional[torch.dtype] = None # Diagnostic state computation
+
     # Z2: Conservation fixers
     z2_compute_dtype: torch.dtype = torch.float64
     z2_storage_dtype: torch.dtype = torch.float32
@@ -73,6 +80,16 @@ class PrecisionPolicy:
 
     # SHT adaptive precision threshold (Algorithm 8)
     sht_adaptive_threshold: int = 42  # L <= threshold → FP32/TF32; L > threshold → FP64
+
+    # Sub-zone dtype overrides (populated by DAG discovery).
+    # Keys: "Z1_SHT", "Z1_IMEX", "Z1_DIAGNOSTIC", "Z2_FIXER", "Z3_NEURAL", ...
+    # Values: torch.dtype override. When absent, fall back to coarse zone dtype.
+    # This is the RUNTIME enforcement map — zone_cast() consults it via
+    # get_effective_dtype(). The per-field sub-zone attributes (z1_sht_dtype
+    # etc.) are the user-facing API; _subzone_dtype is the internal mechanism.
+    _subzone_dtype: dict[str, torch.dtype] = dataclasses.field(default_factory=dict)
+    _module_dtype_map: dict[str, torch.dtype] = dataclasses.field(default_factory=dict)
+    _active_subzone: Optional[str] = None  # set by subzone_context()
 
     # Monitoring
     enable_precision_audit: bool = True
@@ -97,6 +114,61 @@ class PrecisionPolicy:
             PrecisionZone.Z3_NEURAL_NETWORK: self.z3_param_dtype,
         }
         return mapping[zone]
+
+    def get_effective_dtype(
+        self, zone: PrecisionZone, subzone: str | None = None,
+        module_path: str | None = None,
+    ) -> torch.dtype:
+        """Return effective compute dtype, respecting all override layers.
+
+        Resolution order (first match wins):
+          1. ``_module_dtype_map[module_path]`` — per-group optimal (Phase E direct)
+          2. Explicit ``subzone`` in ``_subzone_dtype``
+          3. Active sub-zone context ``_active_subzone``
+          4. Coarse zone dtype from ``compute_dtype(zone)``
+
+        This is the single point of truth for runtime precision enforcement.
+        """
+        if module_path is not None and module_path in self._module_dtype_map:
+            return self._module_dtype_map[module_path]
+        effective = subzone or self._active_subzone
+        if effective is not None and effective in self._subzone_dtype:
+            return self._subzone_dtype[effective]
+        return self.compute_dtype(zone)
+
+    @contextlib.contextmanager
+    def subzone_context(self, subzone: str):
+        """Context manager: temporarily override Z1 dtype for a sub-zone.
+
+        When active, ``compute_dtype(Z1_DYNAMICS_CORE)`` returns the sub-zone's
+        override dtype (from ``_subzone_dtype``) instead of the coarse Z1 dtype.
+        This enables per-operation precision enforcement inside the dycore
+        without modifying every internal call site.
+
+        Usage::
+
+            with policy.subzone_context("Z1_SHT"):
+                # All Z1 operations now use Z1_SHT's dtype
+                y = coords.horizontal.to_nodal(x)
+        """
+        prev_subzone = self._active_subzone
+        self._active_subzone = subzone
+
+        # Patch compute_dtype so existing code paths pick up the override.
+        # All dycore code calls compute_dtype(zone), not get_effective_dtype.
+        _orig_compute = self.compute_dtype
+
+        def _patched_compute(zone):
+            if zone == PrecisionZone.Z1_DYNAMICS_CORE and subzone in self._subzone_dtype:
+                return self._subzone_dtype[subzone]
+            return _orig_compute(zone)
+
+        object.__setattr__(self, "compute_dtype", _patched_compute)
+        try:
+            yield
+        finally:
+            object.__setattr__(self, "compute_dtype", _orig_compute)
+            self._active_subzone = prev_subzone
 
     def apply_tf32_setting(self) -> None:
         """Apply TF32 matmul setting globally for Z1 acceleration."""

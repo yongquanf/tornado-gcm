@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Data pipeline: xarray I/O, sim_time, forcing strategies, regridding.
 
@@ -19,6 +19,7 @@ import logging
 from typing import Sequence
 
 import numpy as np
+import torch
 import torch
 
 logger = logging.getLogger(__name__)
@@ -102,11 +103,12 @@ def inputs_from_xarray(
     input_variables: Sequence[str] | None = None,
     reference_datetime=None,
     time_scale_hours: float = 1.0,
-) -> dict[str, np.ndarray]:
-    """Convert xarray Dataset to model input dict.
+) -> dict[str, torch.Tensor]:
+    """Convert xarray Dataset to model input dict (torch tensors).
 
     Handles dimension reordering (time, level, lon, lat) and surface
-    variable expansion (add singleton level dim).
+    variable expansion (add singleton level dim).  Converts to torch
+    tensors at the xarray boundary — zero numpy leakage downstream.
 
     Args:
         dataset: xarray.Dataset with time, [level], longitude, latitude dims.
@@ -115,7 +117,7 @@ def inputs_from_xarray(
         time_scale_hours: sim_time scale.
 
     Returns:
-        dict of variable_name → numpy array (T, [L], lon, lat).
+        dict of variable_name → torch.Tensor (T, [L], lon, lat).
     """
     import xarray as xr
 
@@ -144,12 +146,17 @@ def inputs_from_xarray(
         if not has_level and arr.ndim >= 2:
             arr = np.expand_dims(arr, axis=-3 if arr.ndim >= 3 else 1)
 
-        result[name] = arr
+        # Convert to torch at the boundary — no numpy downstream
+        result[name] = torch.from_numpy(arr.copy()).float()
 
-    # Add sim_time
-    if "time" in dataset.dims:
+    # Add sim_time as torch tensor (computed from xarray time coordinate)
+    if "time" in dataset.dims and "sim_time" not in result:
         times = dataset["time"].values
-        result = with_sim_time(result, times, reference_datetime, time_scale_hours)
+        ref = reference_datetime if reference_datetime is not None else times[0]
+        st = datetime64_to_sim_time(times, ref, time_scale_hours)
+        if len(st) > 1:
+            st = st.reshape(len(st), *([1] * (next(iter(result.values())).ndim - 1)))
+        result["sim_time"] = torch.from_numpy(st.copy()).float()
 
     # ── Validation ────────────────────────────────────────────────────
     if input_variables is not None:
@@ -160,15 +167,15 @@ def inputs_from_xarray(
                 f"Available: {sorted(dataset.data_vars)}"
             )
 
-    for name, arr in result.items():
+    for name, t in result.items():
         if name == "sim_time":
             continue
-        nan_count = np.isnan(arr).sum()
+        nan_count = torch.isnan(t).sum().item()
         if nan_count > 0:
-            nan_pct = 100.0 * nan_count / arr.size
+            nan_pct = 100.0 * nan_count / t.numel()
             logger.warning(
                 f"Variable '{name}' contains {nan_count} NaN values "
-                f"({nan_pct:.2f}% of {arr.size} elements)"
+                f"({nan_pct:.2f}% of {t.numel()} elements)"
             )
 
     return result
@@ -179,8 +186,8 @@ def forcings_from_xarray(
     forcing_variables: Sequence[str] | None = None,
     reference_datetime=None,
     time_scale_hours: float = 1.0,
-) -> dict[str, np.ndarray]:
-    """Convert xarray Dataset to forcing dict (same logic as inputs)."""
+) -> dict[str, torch.Tensor]:
+    """Convert xarray Dataset to forcing dict (torch tensors, same logic as inputs)."""
     return inputs_from_xarray(
         dataset, forcing_variables, reference_datetime, time_scale_hours
     )

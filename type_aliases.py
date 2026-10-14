@@ -7,8 +7,8 @@ from __future__ import annotations
 import dataclasses
 from typing import Any, Callable, Generic, Mapping, Optional, TypeVar, Union
 
-import numpy as np
 import torch
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # Array / numeric types
@@ -32,6 +32,7 @@ AuxFeatures = dict[str, Any]
 DataState = dict[str, Any]
 ForcingData = dict[str, Any]
 
+
 # ---------------------------------------------------------------------------
 # Key with cos-lat factor (used in spectral transformations)
 # ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ class KeyWithCosLatFactor:
     name: str
     factor_order: int
     filter_strength: float = 0.0
+
 
 # ---------------------------------------------------------------------------
 # RandomnessState  (replaces tree_math.struct version)
@@ -64,6 +66,7 @@ class RandomnessState:
     prng_key: PRNGKeyArray | None = None
     prng_step: int | None = None
 
+
 # ---------------------------------------------------------------------------
 # ModelState  (replaces tree_math.struct Generic version)
 # ---------------------------------------------------------------------------
@@ -84,6 +87,7 @@ class ModelState(Generic[PyTreeState]):
     randomness: RandomnessState = dataclasses.field(
         default_factory=RandomnessState
     )
+
 
 # ---------------------------------------------------------------------------
 # TrajectoryRepresentations
@@ -109,6 +113,7 @@ class TrajectoryRepresentations:
             (False, False): self.data_modal_trajectory,
         }
         return lookup[key]
+
 
 # ---------------------------------------------------------------------------
 # Callable type aliases

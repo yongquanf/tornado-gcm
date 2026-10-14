@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Legacy compatibility: PressureLevelModel wrapper.
 
@@ -145,17 +145,11 @@ class PressureLevelModel(nn.Module):
         return outputs
 
     def inputs_from_xarray(self, dataset) -> dict[str, torch.Tensor]:
-        """Convert xarray Dataset to model inputs."""
+        """Convert xarray Dataset to model inputs (already torch tensors)."""
         from tornado_gcm.training.data_pipeline import inputs_from_xarray
-        import numpy as np
-        data = inputs_from_xarray(dataset, self.config.input_variables)
-        return {k: torch.from_numpy(v).float() for k, v in data.items()
-                if isinstance(v, np.ndarray)}
+        return inputs_from_xarray(dataset, self.config.input_variables)
 
     def forcings_from_xarray(self, dataset) -> dict[str, torch.Tensor]:
-        """Convert xarray Dataset to forcing dict."""
+        """Convert xarray Dataset to forcing dict (already torch tensors)."""
         from tornado_gcm.training.data_pipeline import forcings_from_xarray
-        import numpy as np
-        data = forcings_from_xarray(dataset, self.config.forcing_variables)
-        return {k: torch.from_numpy(v).float() for k, v in data.items()
-                if isinstance(v, np.ndarray)}
+        return forcings_from_xarray(dataset, self.config.forcing_variables)

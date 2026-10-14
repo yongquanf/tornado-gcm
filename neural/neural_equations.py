@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Neural equation wrappers — DirectNeuralEquations / DivCurlNeuralEquations.
 
@@ -174,9 +174,7 @@ class DivCurlNeuralEquations(time_integration.ExplicitODE, nn.Module):
 
         modal_tendencies = {}
         if u is not None and v is not None:
-            sec2 = torch.tensor(
-                grid.sec2_lat, dtype=u.dtype, device=u.device,
-            )
+            sec2 = grid._buf._sec2_lat_torch.to(dtype=u.dtype).to(dtype=u.dtype)
             u_modal = grid.to_modal(u * sec2)
             v_modal = grid.to_modal(v * sec2)
             modal_tendencies["divergence"] = grid.div_cos_lat((u_modal, v_modal))

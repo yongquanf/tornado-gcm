@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Sigma coordinate system based on normalized pressure.
 
@@ -14,6 +14,7 @@ from typing import Optional
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -39,8 +40,21 @@ def _slice_shape_along_axis(
 # SigmaCoordinates
 # ═══════════════════════════════════════════════════════════════════════════
 
-@dataclasses.dataclass(frozen=True)
-class SigmaCoordinates:
+class _SigmaBuffers(nn.Module):
+    """Internal nn.Module holding SigmaCoordinates' static tensors as buffers."""
+
+    def __init__(self):
+        super().__init__()
+
+    def _init(self, _centers, _thickness, _c2c, _dlog_sigma):
+        self.register_buffer("_centers_torch", torch.from_numpy(_centers.copy()).to(torch.float64))
+        self.register_buffer("_layer_thickness_torch", torch.from_numpy(_thickness.copy()).to(torch.float64))
+        self.register_buffer("_center_to_center_torch", torch.from_numpy(_c2c.copy()).to(torch.float64))
+        self.register_buffer("_dlog_sigma_torch", torch.from_numpy(_dlog_sigma.copy()).to(torch.float64))
+
+
+@dataclasses.dataclass
+class SigmaCoordinates(nn.Module):
     """Discrete vertical sigma coordinate system.
 
     Layers are indexed from the top of the atmosphere (σ=0) to the surface (σ=1).
@@ -53,6 +67,7 @@ class SigmaCoordinates:
     boundaries: np.ndarray
 
     def __init__(self, boundaries):
+        super().__init__()
         boundaries = np.asarray(boundaries, dtype=np.float64)
         if not (np.isclose(boundaries[0], 0) and np.isclose(boundaries[-1], 1)):
             raise ValueError(
@@ -65,10 +80,28 @@ class SigmaCoordinates:
                 f"got boundaries={boundaries}"
             )
         object.__setattr__(self, "boundaries", boundaries)
+        _centers = _with_f64_math(lambda x: (x[1:] + x[:-1]) / 2)(boundaries)
+        _thickness = _with_f64_math(np.diff)(boundaries)
+        _c2c = _with_f64_math(np.diff)(_centers)
+        _dlog_sigma = np.diff(np.log(_centers), append=0)
+        _buf = _SigmaBuffers()
+        _buf._init(_centers, _thickness, _c2c, _dlog_sigma)
+        self._buf = _buf
+
+    def __hash__(self):
+        return hash(id(self))
+
+    def __eq__(self, other):
+        return self is other
+
+    def to(self, device: torch.device | str) -> None:
+        """Move all static tensors to *device* (in-place)."""
+        self._buf.to(device=torch.device(device))
 
     @property
     def internal_boundaries(self) -> np.ndarray:
         return self.boundaries[1:-1]
+
 
     @property
     def centers(self) -> np.ndarray:
@@ -117,6 +150,25 @@ class SigmaCoordinates:
         return isinstance(other, SigmaCoordinates) and np.array_equal(
             self.centers, other.centers
         )
+
+
+# Register SigmaCoordinates as a pytree node so Dynamo traces its tensor
+# children with correct FakeTensor device propagation.
+def __sigma_flatten(sc: SigmaCoordinates):
+    children = (sc._buf,)
+    context = {"boundaries": sc.boundaries}
+    return children, context
+
+
+def __sigma_unflatten(children, context):
+    (buf,) = children
+    sc = SigmaCoordinates(context["boundaries"])
+    object.__setattr__(sc, "_buf", buf)
+    return sc
+
+
+from torch.utils._pytree import register_pytree_node as _reg_pytree_sigma
+_reg_pytree_sigma(SigmaCoordinates, __sigma_flatten, __sigma_unflatten)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -171,10 +223,7 @@ def centered_difference(
             f"got {x.shape[axis]} and {coordinates.layers}."
         )
     dx = _diff(x, axis)
-    inv_dsigma = torch.tensor(
-        1 / coordinates.center_to_center,
-        dtype=x.dtype, device=x.device,
-    )
+    inv_dsigma = 1.0 / coordinates._buf._center_to_center_torch.to(device=x.device, dtype=x.dtype)
     # Broadcast inv_dsigma along the vertical axis
     shape = [1] * x.ndim
     pos = axis if axis >= 0 else x.ndim + axis
@@ -195,10 +244,7 @@ def cumulative_sigma_integral(
             f"x.shape[axis] must equal coordinates.layers; "
             f"got {x.shape[axis]} and {coordinates.layers}."
         )
-    dsigma = torch.tensor(
-        coordinates.layer_thickness,
-        dtype=x.dtype, device=x.device,
-    )
+    dsigma = coordinates._buf._layer_thickness_torch.to(device=x.device, dtype=x.dtype)
     shape = [1] * x.ndim
     pos = axis if axis >= 0 else x.ndim + axis
     shape[pos] = -1
@@ -229,10 +275,7 @@ def sigma_integral(
             f"x.shape[axis] must equal coordinates.layers; "
             f"got {x.shape[axis]} and {coordinates.layers}."
         )
-    dsigma = torch.tensor(
-        coordinates.layer_thickness,
-        dtype=x.dtype, device=x.device,
-    )
+    dsigma = coordinates._buf._layer_thickness_torch.to(device=x.device, dtype=x.dtype)
     shape = [1] * x.ndim
     pos = axis if axis >= 0 else x.ndim + axis
     shape[pos] = -1
@@ -259,9 +302,7 @@ def cumulative_log_sigma_integral(
                 x.narrow(pos, 0, x.shape[pos] - 1)) / 2
     integrand = torch.cat([x_interp, x_last], dim=pos)
 
-    log_sigma = np.log(coordinates.centers)
-    dlog_sigma = np.diff(log_sigma, append=0)
-    dlog_sigma_t = torch.tensor(dlog_sigma, dtype=x.dtype, device=x.device)
+    dlog_sigma_t = coordinates._buf._dlog_sigma_torch.to(device=x.device, dtype=x.dtype)
     shape = [1] * x.ndim
     shape[pos] = -1
     dlog_sigma_t = dlog_sigma_t.reshape(shape)

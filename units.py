@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """SimUnits: physical constants and scaling routines for NeuralGCM PyTorch."""
 
@@ -8,7 +8,7 @@ import dataclasses
 from typing import Protocol
 
 from tornado_gcm import scales
-from tornado_gcm import type_aliases as typing_
+from tornado_gcm import typing as typing_
 import numpy as np
 
 Quantity = typing_.Numeric

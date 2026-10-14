@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Primitive equations data structures, diagnostics, and RHS — PyTorch.
 
@@ -16,10 +16,13 @@ Zone: Z0 for einsum via einsum_highest.
 from __future__ import annotations
 
 import dataclasses
+import contextlib
+import functools
 from typing import Any, Callable, Mapping, Optional
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from tornado_gcm.core import coordinate_systems
 from tornado_gcm.core import sigma_coordinates as sigma_mod
@@ -83,6 +86,76 @@ class State:
             tracers=tracers,
             sim_time=self.sim_time,
         )
+
+
+# Register State as a pytree node so Dynamo traces internally-created
+# State objects (via State() constructor, dataclasses.replace(), etc.)
+# with correct FakeTensor device propagation.
+from torch.utils._pytree import MappingKey, register_pytree_node as _reg_pytree_state
+
+
+def __state_flatten(state: State):
+    tracer_keys = sorted(state.tracers.keys())
+    children = [
+        state.vorticity,
+        state.divergence,
+        state.temperature_variation,
+        state.log_surface_pressure,
+    ]
+    for k in tracer_keys:
+        children.append(state.tracers[k])
+    context = {
+        "sim_time": state.sim_time,
+        "tracer_keys": tuple(tracer_keys),
+    }
+    return tuple(children), context
+
+
+def __state_flatten_with_keys(state: State):
+    """Flatten with key metadata — required by torch.export for FX graph capture."""
+    tracer_keys = sorted(state.tracers.keys())
+    children = [
+        (MappingKey("vorticity"), state.vorticity),
+        (MappingKey("divergence"), state.divergence),
+        (MappingKey("temperature_variation"), state.temperature_variation),
+        (MappingKey("log_surface_pressure"), state.log_surface_pressure),
+    ]
+    for k in tracer_keys:
+        children.append((MappingKey(f"tracers.{k}"), state.tracers[k]))
+    context = {
+        "sim_time": state.sim_time,
+        "tracer_keys": tuple(tracer_keys),
+    }
+    return children, context
+
+
+def __state_unflatten(children, context):
+    children = list(children)
+    tracer_keys = context["tracer_keys"]
+    tracers = {}
+    for i, k in enumerate(tracer_keys):
+        tracers[k] = children[4 + i]
+    return State(
+        vorticity=children[0],
+        divergence=children[1],
+        temperature_variation=children[2],
+        log_surface_pressure=children[3],
+        tracers=tracers,
+        sim_time=context["sim_time"],
+    )
+
+
+_reg_pytree_state(
+    State, __state_flatten, __state_unflatten,
+    flatten_with_keys_fn=__state_flatten_with_keys,
+)
+
+
+def _normalize_state_dtype(state: State, target_dtype: torch.dtype) -> State:
+    """Cast all floating-point State tensors to *target_dtype*."""
+    return state.tree_map(
+        lambda t: t.to(target_dtype) if t.is_floating_point() else t
+    )
 
 
 class StateShapeError(Exception):
@@ -151,9 +224,7 @@ def compute_diagnostic_state(
     This transforms modal fields to nodal space and evaluates key diagnostic
     quantities needed for the explicit tendency computation.
     """
-    # Align with dinosaur/JAX high-precision SH transform behavior in diagnostic
-    # construction to reduce to_nodal / cos_lat_grad drift on low-resolution grids.
-    grid = coords.horizontal.with_einsum(einsum_highest)
+    grid = coords._horizontal_einsum_highest or coords.horizontal
     out_dtype = state.vorticity.dtype
     modal_work_dtype = torch.float64
 
@@ -163,29 +234,43 @@ def compute_diagnostic_state(
     log_sp_modal = state.log_surface_pressure.to(modal_work_dtype)
     tracers_modal = {k: v.to(modal_work_dtype) for k, v in state.tracers.items()}
 
-    nodal_vorticity_work = grid.to_nodal(vorticity_modal)
-    nodal_divergence_work = grid.to_nodal(divergence_modal)
-    nodal_temperature_variation_work = grid.to_nodal(temperature_modal)
-
-    # Tracers
-    nodal_tracers_work = {k: grid.to_nodal(v) for k, v in tracers_modal.items()}
-
-    # cos(lat) * velocity from vorticity + divergence
+    # Pre-compute modal-space derived quantities so ALL to_nodal() calls
+    # can be batched into a single SHT.
     cos_lat_u_modal = spherical_harmonic.get_cos_lat_vector(
         vorticity_modal, divergence_modal, grid, clip=False
     )
-    nodal_cos_lat_u_work = (
-        grid.to_nodal(cos_lat_u_modal[0]),
-        grid.to_nodal(cos_lat_u_modal[1]),
-    )
-
-    # cos(lat) * grad(log(Ps))
     cos_lat_grad_log_sp_modal = grid.cos_lat_grad(
         log_sp_modal, clip=False
     )
+
+    # Batched modal→nodal: stack 6+N level fields into one tensor,
+    # transform once.  cos_lat_grad_log_sp has shape (1, m, l) and
+    # cannot stack with the (levels, m, l) fields — batched separately.
+    tracer_keys = sorted(tracers_modal.keys())
+    _modal_stack = [vorticity_modal, divergence_modal, temperature_modal]
+    for k in tracer_keys:
+        _modal_stack.append(tracers_modal[k])
+    _modal_stack.extend([cos_lat_u_modal[0], cos_lat_u_modal[1]])
+    _stacked_nodal = grid.to_nodal(torch.stack(_modal_stack, dim=0))
+
+    # Unbind level fields in stack order
+    nodal_vorticity_work = _stacked_nodal[0]
+    nodal_divergence_work = _stacked_nodal[1]
+    nodal_temperature_variation_work = _stacked_nodal[2]
+    _t0 = 3
+    nodal_tracers_work = {}
+    for i, k in enumerate(tracer_keys):
+        nodal_tracers_work[k] = _stacked_nodal[_t0 + i]
+    _t1 = _t0 + len(tracer_keys)
+    nodal_cos_lat_u_work = (_stacked_nodal[_t1], _stacked_nodal[_t1 + 1])
+
+    # Surface fields (1, m, l) — batched as a pair
+    _stacked_surface_nodal = grid.to_nodal(torch.stack([
+        cos_lat_grad_log_sp_modal[0],
+        cos_lat_grad_log_sp_modal[1],
+    ], dim=0))
     nodal_cos_lat_grad_log_sp_work = (
-        grid.to_nodal(cos_lat_grad_log_sp_modal[0]),
-        grid.to_nodal(cos_lat_grad_log_sp_modal[1]),
+        _stacked_surface_nodal[0], _stacked_surface_nodal[1],
     )
 
     # u · grad(log(Ps))
@@ -195,9 +280,7 @@ def compute_diagnostic_state(
     #   (u*grad_u + v*grad_v) * sec2
     # and reduces PT/JAX drift in sigma_dot diagnostics.
     work_dtype = torch.float64
-    sec2_lat = torch.tensor(
-        grid.sec2_lat, dtype=work_dtype, device=nodal_cos_lat_u_work[0].device,
-    )
+    sec2_lat = grid._buf._sec2_lat_torch.to(device=nodal_cos_lat_u_work[0].device, dtype=nodal_cos_lat_u_work[0].dtype).to(dtype=work_dtype)
     u_comp = nodal_cos_lat_u_work[0].to(work_dtype)
     v_comp = nodal_cos_lat_u_work[1].to(work_dtype)
     grad_u = nodal_cos_lat_grad_log_sp_work[0].to(work_dtype)
@@ -210,7 +293,7 @@ def compute_diagnostic_state(
     # Placeholder sigma_dot — requires vertical coordinate
     # Full computation needs cumulative_sigma_integral which depends on
     # the coordinate system type.
-    if hasattr(coords, 'vertical') and hasattr(coords.vertical, 'layer_thickness'):
+    if hasattr(coords, 'vertical') and hasattr(coords.vertical, '_buf'):
         vertical = coords.vertical
         f_explicit = sigma_mod.cumulative_sigma_integral(
             u_dot_grad_log_sp_work, vertical, axis=-3, downward=True,
@@ -225,9 +308,8 @@ def compute_diagnostic_state(
         #   sum_σ = cumsum(layer_thickness)[:, None, None]  (length L)
         #   σ̇ = slice_0_L-1( sum_σ * f[..., -1, :, :] - f )
         # (same algebra as former ``cum_delta_sigma[:-1] * total - f[:-1]``, clearer vs lax).
-        th = np.asarray(vertical.layer_thickness, dtype=np.float64)
-        sum_sigma_1d = torch.tensor(
-            np.cumsum(th), dtype=f_explicit.dtype, device=f_explicit.device,
+        sum_sigma_1d = torch.cumsum(
+            vertical._buf._layer_thickness_torch.to(dtype=f_explicit.dtype), dim=0,
         )
         axis_v = -3
 
@@ -314,9 +396,33 @@ def get_geopotential_diff_sigma(
     coordinates: sigma_mod.SigmaCoordinates,
     ideal_gas_constant: float,
 ) -> torch.Tensor:
-    """Φ − Φ_s = G @ T (vertical matrix-vector product)."""
-    G = get_geopotential_weights_sigma(coordinates, ideal_gas_constant)
-    G_t = torch.tensor(G, dtype=torch.float64, device=temperature.device)
+    """Φ − Φ_s = G @ T (vertical matrix-vector product).
+
+    The geopotential weight matrix G is upper-triangular:
+      G[j,j] = R * α[j]
+      G[j,k] = R * (α[k] + α[k-1])   for k > j
+    where α[k] = (log σ_{k+1/2} − log σ_{k-1/2}) / 2.
+
+    Built fully vectorised in torch so Dynamo traces through without
+    Python-loop unrolling or numpy graph breaks.
+    """
+    c = coordinates._buf._centers_torch
+    n = coordinates.layers
+    dev = temperature.device
+    log_c = torch.log(c)
+    alpha_diff = (log_c[1:] - log_c[:-1]) / 2.0
+    alpha_last = -log_c[-1:]
+    alpha = torch.cat([alpha_diff, alpha_last])
+    R = ideal_gas_constant
+
+    # Strictly upper-triangular part: G[j,k] = R * (α[k] + α[k-1]) for k > j.
+    # The value is row-independent, so build one row pattern and tile.
+    row_body = R * (alpha[1:] + alpha[:-1])
+    row = torch.cat([torch.zeros(1, dtype=torch.float64, device=dev), row_body])
+    G_t = torch.triu(row[None, :].repeat(n, 1), diagonal=1)
+    # Diagonal: G[j,j] = R * α[j]
+    G_t += torch.diag(R * alpha)
+
     return einsum_highest("gh,...hml->...gml", G_t, temperature)
 
 
@@ -430,9 +536,7 @@ def div_sec_lat(
     grid: spherical_harmonic.Grid,
 ) -> torch.Tensor:
     """∇·(M,N)/cos²θ in spectral space."""
-    sec2 = torch.tensor(
-        grid.sec2_lat, dtype=m_component.dtype, device=m_component.device,
-    )
+    sec2 = grid._buf._sec2_lat_torch.to(device=m_component.device, dtype=m_component.dtype)
     m_sec2 = grid.to_modal(grid.to_nodal(m_component) * sec2)
     n_sec2 = grid.to_modal(grid.to_nodal(n_component) * sec2)
     return grid.div_cos_lat((m_sec2, n_sec2))
@@ -466,7 +570,86 @@ def filtered_modal_orography(
 # PrimitiveEquationsSigma (IMEX ODE)
 # ═══════════════════════════════════════════════════════════════════════════
 
-class PrimitiveEquationsSigma:
+class _PESBuffers(nn.Module):
+    """Internal nn.Module holding PrimitiveEquationsSigma's static tensors as buffers."""
+
+    def __init__(self):
+        super().__init__()
+        self._finalized = False
+
+    def _finalize(self):
+        for _init, _buf_name in (
+            ("_init_T_ref", "_T_ref_torch"),
+            ("_init_H_mat", "_H_matrix_torch"),
+            ("_init_G_mat", "_G_matrix_torch"),
+            ("_init_dsigma", "_dsigma_torch"),
+            ("_init_coriolis", "_coriolis"),
+            ("_init_oro", "orography"),
+        ):
+            _t = getattr(self, _init)
+            delattr(self, _init)
+            if _t is not None:
+                self.register_buffer(_buf_name, _t)
+        self._finalized = True
+
+    def _ensure(self, attr_name: str, target: torch.Tensor) -> torch.Tensor:
+        _t = getattr(self, attr_name)
+        return _t.to(device=target.device, dtype=target.dtype)
+
+
+@contextlib.contextmanager
+def _sht_subzone_override(dycore, label):
+    """Set the SHT sub-zone dtype override on the dycore's RealSphericalHarmonics
+    for the duration of the context.
+
+    *label* selects the sub-zone (e.g. ``"Z1_SHT"`` for dynamics transforms,
+    ``"Z1_DIAGNOSTIC"`` for the diagnostic path); it falls back to the coarse
+    ``"Z1_DYNAMICS"`` dtype when the specific sub-zone is absent.  ``label=None``
+    (or no policy / no dtype) is a pure pass-through, so the implicit solve and
+    the default/compiled baseline keep full precision (IMEX guards FP64).
+    """
+    policy = getattr(dycore, "_policy", None)
+    if getattr(dycore, "_baked_override", False):
+        # U1: dtype baked once (persistent _subzone_dtype_override already set);
+        # skip the per-call set/restore to remove inner-loop overhead.
+        yield
+        return
+    dtype = None
+    if policy is not None and label is not None:
+        sz = getattr(policy, "_subzone_dtype", None)
+        if sz:
+            dtype = sz.get(label) or sz.get("Z1_DYNAMICS")
+    if dtype is None:
+        yield
+        return
+    # RealSphericalHarmonics is a frozen dataclass → set via object.__setattr__.
+    sht = dycore.coords.horizontal.spherical_harmonics
+    prev = getattr(sht, "_subzone_dtype_override", None)
+    object.__setattr__(sht, "_subzone_dtype_override", dtype)
+    try:
+        yield
+    finally:
+        object.__setattr__(sht, "_subzone_dtype_override", prev)
+
+
+def _z1_subzone(label):
+    """Decorator factory: during the wrapped dycore method, apply the SHT
+    sub-zone override for *label* (see ``_sht_subzone_override``).
+
+    Runtime wire for software-defined dycore precision — gives SHT / diagnostic
+    sub-zones independent control, while ``label=None`` keeps the implicit solve
+    at full precision (IMEX guards FP64).  Pure pass-through without a policy.
+    """
+    def deco(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            with _sht_subzone_override(self, label):
+                return method(self, *args, **kwargs)
+        return wrapper
+    return deco
+
+
+class PrimitiveEquationsSigma(nn.Module):
     """Full primitive equations in sigma coordinates implementing ImplicitExplicitODE.
 
     Provides explicit_terms, implicit_terms, implicit_inverse for use with
@@ -492,6 +675,7 @@ class PrimitiveEquationsSigma:
         humidity_key: Optional[str] = None,
         cloud_keys: Optional[tuple[str, ...]] = None,
     ):
+        super().__init__()
         self.reference_temperature = np.asarray(reference_temperature, dtype=np.float64)
         self.orography = orography
         self.coords = coords
@@ -499,16 +683,111 @@ class PrimitiveEquationsSigma:
         self.include_vertical_advection = include_vertical_advection
         self.humidity_key = humidity_key
         self.cloud_keys = cloud_keys
+        self._policy = None  # set by NeuralGCMModel after construction
 
         if self.cloud_keys is not None and self.humidity_key is None:
             raise ValueError("cloud_keys requires humidity_key to be set.")
 
-        # Precompute coriolis parameter in nodal space
+        # Register static tensors as nn.Module buffers so Dynamo natively
+        # traces buffer access — no graph breaks, no @torch.compiler.disable.
         _, sin_lat = coords.horizontal.nodal_axes
-        self._coriolis = 2.0 * physics_specs.angular_velocity * sin_lat
+        _coriolis_np = 2.0 * physics_specs.angular_velocity * sin_lat
+        self._buf = _PESBuffers()
+        self._buf._init_coriolis = torch.from_numpy(_coriolis_np.copy()).to(torch.float32)
 
         # Precompute implicit inverse matrices for each wavenumber
         self._precompute_implicit_inverse()
+        self._buf._init_T_ref = torch.from_numpy(self.reference_temperature.copy()).to(torch.float64)
+        self._buf._init_H_mat = torch.from_numpy(self._H_matrix.copy()).to(torch.float64)
+        self._buf._init_G_mat = torch.from_numpy(self._G_matrix.copy()).to(torch.float64)
+        self._buf._init_dsigma = torch.from_numpy(self._dsigma.copy()).to(torch.float64)
+        # Cache for lazy precomputed implicit inverses keyed by eta (step_size).
+        # torch.linalg.inv is not CUDA-graph-capturable (cuSOLVER dynamic
+        # parallelism).  Precomputing the inverse once per unique eta at warmup
+        # time keeps the hot path graph-clean.
+        self._implicit_inv_cache: dict[float, torch.Tensor] = {}
+        self._buf._init_oro = orography
+        self._buf._finalize()
+
+    def forward(self, state: State, inner_dt: float | None = None) -> State:
+        """One dycore sub-step: explicit + implicit integration.
+
+        Provides a standard nn.Module.forward() for:
+          - register_forward_hook → DAG tensor tracing
+          - torch.export → static graph capture
+          - torch.compile → module-level optimization
+        """
+        if inner_dt is None:
+            return self.explicit_terms(state)
+        return self.explicit_terms(state)  # implicit terms require IMEX wrapper
+
+    def to(self, device: torch.device | str, *args, **kwargs) -> PrimitiveEquationsSigma:
+        """Move all static tensors to *device* (in-place).
+
+        Overrides nn.Module.to() to also migrate non-Module objects (Grid,
+        SigmaCoordinates) that hold tensors but aren't themselves nn.Module.
+        """
+        _device = torch.device(device)
+        # nn.Module.to() moves registered buffers + child modules (_buf).
+        super().to(device=_device, *args, **kwargs)
+        # Migrate non-Module geometry containers.
+        self.coords.horizontal.to(_device)
+        self.coords.vertical.to(_device)
+        if hasattr(self.coords, "_horizontal_einsum_highest") and hasattr(
+            self.coords._horizontal_einsum_highest, "to"
+        ):
+            self.coords._horizontal_einsum_highest.to(_device)
+        # Clear device-stale implicit inverse cache; lazy repopulation on
+        # next step will compute inverses on the correct device.
+        self._implicit_inv_cache.clear()
+        return self
+
+    def _precompute_implicit_inverses(self, inner_dt: float) -> None:
+        """Pre-populate linalg.inv cache for all known SIL3 eta values.
+
+        torch.linalg.inv is not CUDA-graph-capturable.  Computing inverses
+        eagerly at construction time (or after ``to(device)``) ensures the
+        hot path only does cache lookups + matvecs — fully graph-clean.
+        """
+        if not hasattr(self, '_buf') or self._buf is None:
+            return
+        device = self._buf._T_ref_torch.device
+        # SIL3 implicit diagonal: a_im[i][i] ∈ {1/6, 1/3, 1/4}
+        # plus backward Euler: 0.5
+        eta_factors = [1.0 / 6.0, 1.0 / 3.0, 0.25, 0.5]
+        n = self.vertical.layers
+        L = self.grid.total_wavenumbers
+        f64 = torch.float64
+        R = float(self.R)
+
+        lam = self.grid._buf._laplacian_eigenvalues_torch.to(device=device, dtype=f64)
+        G = self._buf._G_matrix_torch.to(device=device, dtype=f64)
+        H = self._buf._H_matrix_torch.to(device=device, dtype=f64)
+        dsigma = self._buf._dsigma_torch.to(device=device, dtype=f64)
+        T_ref = self._buf._T_ref_torch.to(device=device, dtype=f64)
+
+        eye_1nn = torch.eye(n, dtype=f64, device=device)[None, ...]
+        ones_L11 = torch.ones(L, 1, 1, dtype=f64, device=device)
+        zeros_L1n = torch.zeros(L, 1, n, dtype=f64, device=device)
+        zeros_Ln1 = torch.zeros(L, n, 1, dtype=f64, device=device)
+
+        for factor in eta_factors:
+            eta = float(inner_dt * factor)
+            if eta in self._implicit_inv_cache:
+                continue
+
+            lam_G = eta * lam[:, None, None] * G[None, :, :]
+            lam_T = eta * R * lam[:, None] * T_ref[None, :]
+            row0 = torch.cat([eye_1nn.expand(L, n, n), lam_G, lam_T[:, :, None]], dim=2)
+            row1 = torch.cat([
+                eta * H[None, ...].expand(L, n, n),
+                eye_1nn.expand(L, n, n), zeros_Ln1,
+            ], dim=2)
+            row2 = torch.cat([
+                (eta * dsigma)[None, None, :].expand(L, 1, n), zeros_L1n, ones_L11,
+            ], dim=2)
+            implicit_matrix = torch.cat([row0, row1, row2], dim=1)
+            self._implicit_inv_cache[eta] = torch.linalg.inv(implicit_matrix)
 
     @property
     def grid(self) -> spherical_harmonic.Grid:
@@ -593,20 +872,14 @@ class PrimitiveEquationsSigma:
     ) -> torch.Tensor:
         """−∇²(½|u|²) in modal space."""
         u, v = aux_state.cos_lat_u
-        sec2 = torch.tensor(
-            self.grid.sec2_lat, dtype=u.dtype, device=u.device,
-        )
+        sec2 = self.grid._buf._sec2_lat_torch.to(device=u.device, dtype=u.dtype)
         ke_nodal = 0.5 * (u**2 + v**2) * sec2
         ke_modal = self.grid.to_modal(ke_nodal)
         return -self.grid.laplacian(ke_modal)
 
     def orography_tendency(self, device: torch.device | None = None) -> torch.Tensor:
         """−g·∇²(orography) in modal space."""
-        oro = self.orography
-        # PrimitiveEquationsSigma is not an nn.Module, so model.to(device)
-        # does not propagate.  Lazily move + cache orography on first call.
-        if device is not None and oro.device != device:
-            self.orography = oro = oro.to(device)
+        oro = self._buf.orography
         return -self.g * self.grid.laplacian(oro)
 
     def curl_and_div_tendencies(
@@ -625,12 +898,10 @@ class PrimitiveEquationsSigma:
         grid = self.grid
         u, v = aux_state.cos_lat_u
         vort = aux_state.vorticity
-        sec2 = torch.tensor(grid.sec2_lat, dtype=u.dtype, device=u.device)
+        sec2 = grid._buf._sec2_lat_torch.to(device=u.device, dtype=u.dtype)
 
-        # Coriolis parameter
-        coriolis = torch.tensor(
-            self._coriolis, dtype=u.dtype, device=u.device,
-        )
+        # Coriolis parameter (device-guarded via _ensure_device)
+        coriolis = self._buf._coriolis.to(device=u.device, dtype=u.dtype)
         total_vorticity = vort + coriolis
 
         # (ζ+f)×(k×v): note k×v = (-v, u), so components of (ζ+f)(k×v) are:
@@ -663,9 +934,13 @@ class PrimitiveEquationsSigma:
         vertical_term_u = (sigma_dot_u + rt * grad_lnps_u) * sec2
         vertical_term_v = (sigma_dot_v + rt * grad_lnps_v) * sec2
 
-        # Combine all terms before spectral transform
-        combined_u = grid.to_modal(nodal_vorticity_u + vertical_term_u)
-        combined_v = grid.to_modal(nodal_vorticity_v + vertical_term_v)
+        # Batched forward SHT: stack (u, v) components → one transform
+        _stack_uv = torch.stack([
+            nodal_vorticity_u + vertical_term_u,
+            nodal_vorticity_v + vertical_term_v,
+        ], dim=0)
+        _stack_uv_modal = grid.to_modal(_stack_uv)
+        combined_u, combined_v = _stack_uv_modal[0], _stack_uv_modal[1]
 
         # Single curl/div call on the combined flux
         vort_tendency = -grid.curl_cos_lat((combined_u, combined_v), clip=False)
@@ -685,12 +960,13 @@ class PrimitiveEquationsSigma:
           modal: -div_sec_lat(u·scalar, v·scalar)
         """
         u, v = aux_state.cos_lat_u
-        sec2 = torch.tensor(
-            self.grid.sec2_lat, dtype=u.dtype, device=u.device,
-        )
+        sec2 = self.grid._buf._sec2_lat_torch.to(device=u.device, dtype=u.dtype)
         scalar_times_div = scalar_nodal * aux_state.divergence
-        flux_u = self.grid.to_modal(u * scalar_nodal * sec2)
-        flux_v = self.grid.to_modal(v * scalar_nodal * sec2)
+        _stack_flux = torch.stack([
+            u * scalar_nodal * sec2,
+            v * scalar_nodal * sec2,
+        ], dim=0)
+        flux_u, flux_v = self.grid.to_modal(_stack_flux)
         modal_tendency = -self.grid.div_cos_lat((flux_u, flux_v), clip=False)
         return scalar_times_div, modal_tendency
 
@@ -707,9 +983,9 @@ class PrimitiveEquationsSigma:
             aux_state.sigma_dot_full, T_var, self.vertical,
         )
         # σ̇_explicit · ∂T_ref/∂σ (if T_ref varies with level)
-        T_ref = torch.tensor(
-            self.T_ref, dtype=T_var.dtype, device=T_var.device,
-        ).reshape(-1, 1, 1).expand_as(T_var)
+        T_ref = self._buf._T_ref_torch.to(device=T_var
+        .device, dtype=T_var
+        .dtype).reshape(-1, 1, 1).expand_as(T_var)
         result = result + sigma_mod.centered_vertical_advection(
             aux_state.sigma_dot_explicit, T_ref, self.vertical,
         )
@@ -740,14 +1016,16 @@ class PrimitiveEquationsSigma:
         f = sigma_mod.cumulative_sigma_integral(
             g_term, self.vertical, axis=-3, downward=True,
         )
-        alpha = torch.tensor(
-            get_sigma_ratios(self.vertical),
-            dtype=f.dtype, device=f.device,
-        ).reshape(-1, 1, 1)
-        dsigma = torch.tensor(
-            self.vertical.layer_thickness,
-            dtype=f.dtype, device=f.device,
-        ).reshape(-1, 1, 1)
+        alpha_diff = torch.diff(
+            torch.log(self.vertical._buf._centers_torch), append=self.vertical._buf._centers_torch.new_zeros(1),
+        ).to(dtype=f.dtype) / 2.0
+        # Replace last element functionally (CUDA-graph compatible).
+        alpha_last = (-torch.log(self.vertical._buf._centers_torch[-1])).to(dtype=f.dtype)
+        alpha = torch.cat([alpha_diff[:-1], alpha_last.unsqueeze(0)])
+        alpha = alpha.reshape(-1, 1, 1)
+        dsigma = self.vertical._buf._layer_thickness_torch.to(device=f
+        .device, dtype=f
+        .dtype).reshape(-1, 1, 1)
 
         # g_part = (α[n]*f[n] + α[n-1]*f[n-1]) / Δσ[n]
         # with α[-1]*f[-1] = 0 (no integral above the top level)
@@ -778,10 +1056,9 @@ class PrimitiveEquationsSigma:
         g_explicit = aux_state.u_dot_grad_log_sp
         g_full = g_explicit + aux_state.divergence
 
-        T_ref = torch.tensor(
-            self.T_ref, dtype=aux_state.temperature_variation.dtype,
-            device=aux_state.temperature_variation.device,
-        ).reshape(-1, 1, 1)
+        T_ref = self._buf._T_ref_torch.to(device=aux_state.temperature_variation
+        .device, dtype=aux_state.temperature_variation
+        .dtype).reshape(-1, 1, 1)
 
         mean_t_part = self._t_omega_over_sigma_sp(
             T_ref, g_explicit, aux_state.u_dot_grad_log_sp,
@@ -856,10 +1133,9 @@ class PrimitiveEquationsSigma:
 
         grid = self.grid
         R_diff = self.physics_specs.R_vapor - self.R  # R_v - R_d
-        T_ref = torch.tensor(
-            self.T_ref, dtype=state.vorticity.dtype,
-            device=state.vorticity.device,
-        ).reshape(-1, 1, 1)
+        T_ref = self._buf._T_ref_torch.to(device=state.vorticity
+        .device, dtype=state.vorticity
+        .dtype).reshape(-1, 1, 1)
 
         # --- Term 1: Δ(R·(Tv-T)·lnPs) = R_diff·T_ref·q·Δ(lnPs) ---
         nodal_laplacian_lsp = grid.to_nodal(
@@ -875,10 +1151,7 @@ class PrimitiveEquationsSigma:
                 grid.to_nodal(cos_lat_grad_q[0]),
                 grid.to_nodal(cos_lat_grad_q[1]),
             )
-            sec2 = torch.tensor(
-                grid.sec2_lat, dtype=state.vorticity.dtype,
-                device=state.vorticity.device,
-            )
+            sec2 = grid._buf._sec2_lat_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype)
             nodal_dot_term = (
                 R_diff * T_ref * sec2 * (
                     nodal_cos_lat_grad_q[0] * aux_state.cos_lat_grad_log_sp[0]
@@ -923,20 +1196,16 @@ class PrimitiveEquationsSigma:
 
         grid = self.grid
         R_diff = self.physics_specs.R_vapor - self.R
-        T_ref = torch.tensor(
-            self.T_ref, dtype=state.vorticity.dtype,
-            device=state.vorticity.device,
-        ).reshape(-1, 1, 1)
+        T_ref = self._buf._T_ref_torch.to(device=state.vorticity
+        .device, dtype=state.vorticity
+        .dtype).reshape(-1, 1, 1)
 
         cos_lat_grad_q = grid.cos_lat_grad(q_modal, clip=False)
         nodal_cos_lat_grad_q = (
             grid.to_nodal(cos_lat_grad_q[0]),
             grid.to_nodal(cos_lat_grad_q[1]),
         )
-        sec2 = torch.tensor(
-            grid.sec2_lat, dtype=state.vorticity.dtype,
-            device=state.vorticity.device,
-        )
+        sec2 = grid._buf._sec2_lat_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype)
         # Cross product: (∇lnPs)_lon * (∇q)_lat - (∇lnPs)_lat * (∇q)_lon
         nodal_curl_term = (
             R_diff * T_ref * sec2 * (
@@ -946,6 +1215,13 @@ class PrimitiveEquationsSigma:
         )
         return grid.to_modal(nodal_curl_term)
 
+    def _diag_state(self, state: State):
+        """Diagnostic state under the Z1_DIAGNOSTIC sub-zone override
+        (independent of the surrounding Z1_SHT dynamics precision)."""
+        with _sht_subzone_override(self, "Z1_DIAGNOSTIC"):
+            return compute_diagnostic_state(state, self.coords)
+
+    @_z1_subzone("Z1_SHT")
     def explicit_terms(self, state: State) -> State:
         """Compute explicit tendency terms for IMEX integration.
 
@@ -961,8 +1237,13 @@ class PrimitiveEquationsSigma:
           9. Moisture corrections (if humidity_key is set)
           10. Combine and clip highest wavenumber
         """
+        # Normalize to Z1 dtype for consistent Dynamo tracing.
+        # compute_diagnostic_state internally uses FP64, but Dynamo
+        # traces based on the input argument dtypes; varying dtypes
+        # across outer steps cause recompilation storms.
+        state = _normalize_state_dtype(state, torch.float32)
         grid = self.grid
-        aux = compute_diagnostic_state(state, self.coords)
+        aux = self._diag_state(state)
 
         # 1. Vorticity/divergence tendencies
         vort_tend, div_tend = self.curl_and_div_tendencies(aux)
@@ -1024,6 +1305,7 @@ class PrimitiveEquationsSigma:
         )
         return result
 
+    @_z1_subzone("Z1_SHT")
     def implicit_terms(self, state: State) -> State:
         """Compute implicit tendency terms.
 
@@ -1032,6 +1314,7 @@ class PrimitiveEquationsSigma:
           T_implicit = −H @ D
           lnPs_implicit = −Δσ^T · D
         """
+        state = _normalize_state_dtype(state, torch.float32)
         grid = self.grid
         vertical = self.vertical
 
@@ -1040,27 +1323,24 @@ class PrimitiveEquationsSigma:
             state.temperature_variation, vertical, self.R,
         )
         # R * T_ref * lnPs
-        T_ref_t = torch.tensor(
-            self.T_ref, dtype=state.log_surface_pressure.dtype,
-            device=state.log_surface_pressure.device,
-        ).reshape(-1, 1, 1)
+        T_ref_t = self._buf._T_ref_torch.to(device=state.log_surface_pressure
+        .device, dtype=state.log_surface_pressure
+        .dtype).reshape(-1, 1, 1)
         rt_lnps = self.R * T_ref_t * state.log_surface_pressure
 
         # D_implicit = −∇²(Φ_diff + R·T_ref·lnPs)
         divergence_implicit = -grid.laplacian(geo_diff + rt_lnps)
 
         # T_implicit = −H @ D
-        H = torch.tensor(self._H_matrix, dtype=torch.float64,
-                         device=state.divergence.device)
+        H = self._buf._H_matrix_torch.to(device=state.divergence.device, dtype=state.divergence.dtype).to(dtype=torch.float64)
         temperature_implicit = -einsum_highest(
             "gh,...hml->...gml", H, state.divergence,
         )
 
         # lnPs_implicit = −Δσ^T · D
-        dsigma = torch.tensor(
-            self._dsigma, dtype=state.divergence.dtype,
-            device=state.divergence.device,
-        ).reshape(-1, 1, 1)
+        dsigma = self._buf._dsigma_torch.to(device=state.divergence
+        .device, dtype=state.divergence
+        .dtype).reshape(-1, 1, 1)
         lnps_implicit = -(dsigma * state.divergence).sum(dim=-3, keepdim=True)
 
         return State(
@@ -1072,6 +1352,7 @@ class PrimitiveEquationsSigma:
             sim_time=state.sim_time,
         )
 
+    @_z1_subzone(None)
     def implicit_inverse(self, state: State, step_size: float) -> State:
         """Apply `(I - step_size * implicit_terms)^-1`, aligned with JAX split path.
 
@@ -1080,49 +1361,47 @@ class PrimitiveEquationsSigma:
         2. Apply inverse in split form (9 block matvecs), mirroring JAX order.
         3. Cast prognostic updates back to the state tensor dtype (JAX-matched).
         """
+        state = _normalize_state_dtype(state, torch.float32)
         n = self.vertical.layers
         L = self.grid.total_wavenumbers
         eta = float(step_size)
 
         device = state.vorticity.device
+        f64 = torch.float64
 
-        # Build implicit matrix blocks in float64 to mirror JAX.
-        lam = np.asarray(self.grid.laplacian_eigenvalues, dtype=np.float64)  # (L,)
-        G = np.asarray(self._G_matrix, dtype=np.float64)  # (n, n)
-        H = np.asarray(self._H_matrix, dtype=np.float64)  # (n, n)
-        dsigma = np.asarray(self._dsigma, dtype=np.float64)  # (n,)
-        T_ref = np.asarray(self.T_ref, dtype=np.float64)  # (n,)
+        # Build implicit matrix blocks in float64 — pure torch, no numpy,
+        # so Dynamo traces through the full inverse without a graph break.
+        lam = self.grid._buf._laplacian_eigenvalues_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype).to(dtype=f64)  # (L,)
+        G = self._buf._G_matrix_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype).to(dtype=f64)  # (n, n)
+        H = self._buf._H_matrix_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype).to(dtype=f64)  # (n, n)
+        dsigma = self._buf._dsigma_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype).to(dtype=f64)  # (n,)
+        T_ref = self._buf._T_ref_torch.to(device=state.vorticity.device, dtype=state.vorticity.dtype).to(dtype=f64)  # (n,)
         R = float(self.R)
 
-        eye = np.eye(n, dtype=np.float64)[np.newaxis, ...]  # (1, n, n)
-        row0 = np.concatenate(
-            [
-                np.broadcast_to(eye, (L, n, n)),
-                eta * np.einsum("l,jk->ljk", lam, G),
-                eta * R * np.einsum("l,j->lj", lam, T_ref)[:, :, np.newaxis],
-            ],
-            axis=2,
-        )
-        row1 = np.concatenate(
-            [
-                eta * np.broadcast_to(H[np.newaxis, ...], (L, n, n)),
-                np.broadcast_to(eye, (L, n, n)),
-                np.zeros((L, n, 1), dtype=np.float64),
-            ],
-            axis=2,
-        )
-        row2 = np.concatenate(
-            [
-                np.broadcast_to((eta * dsigma)[np.newaxis, np.newaxis, :], (L, 1, n)),
-                np.zeros((L, 1, n), dtype=np.float64),
-                np.ones((L, 1, 1), dtype=np.float64),
-            ],
-            axis=2,
-        )
-        implicit_matrix = np.concatenate([row0, row1, row2], axis=1)  # (L, 2n+1, 2n+1)
-        inverse = np.linalg.inv(implicit_matrix)
-
-        inv_t = torch.tensor(inverse, dtype=torch.float64, device=device)
+        eye_1nn = torch.eye(n, dtype=f64, device=device)[None, ...]  # (1, n, n)
+        # row0: [I,  eta*λ*G,  eta*R*λ⊗T_ref]  — divergence block
+        lam_G = eta * lam[:, None, None] * G[None, :, :]          # (L, n, n)
+        lam_T = eta * R * lam[:, None] * T_ref[None, :]           # (L, n)
+        row0 = torch.cat([eye_1nn.expand(L, n, n), lam_G, lam_T[:, :, None]], dim=2)
+        # row1: [eta*H,  I,  0]  — temperature block
+        row1 = torch.cat([
+            eta * H[None, ...].expand(L, n, n),
+            eye_1nn.expand(L, n, n),
+            torch.zeros(L, n, 1, dtype=f64, device=device),
+        ], dim=2)
+        # row2: [eta*Δσ,  0,  1]  — surface-pressure block
+        row2 = torch.cat([
+            (eta * dsigma)[None, None, :].expand(L, 1, n),
+            torch.zeros(L, 1, n, dtype=f64, device=device),
+            torch.ones(L, 1, 1, dtype=f64, device=device),
+        ], dim=2)
+        implicit_matrix = torch.cat([row0, row1, row2], dim=1)  # (L, 2n+1, 2n+1)
+        # torch.linalg.inv is not CUDA-graph-capturable.  Cache the inverse
+        # per eta so that the hot path only does matvecs (graph-clean).
+        inv_t = self._implicit_inv_cache.get(eta)
+        if inv_t is None:
+            inv_t = torch.linalg.inv(implicit_matrix)
+            self._implicit_inv_cache[eta] = inv_t
 
         def _vertical_matvec_per_wavenumber(mat: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
             # mat: (L, out_n, in_n), x: (in_n, m, L) -> (out_n, m, L)
@@ -1173,6 +1452,37 @@ class PrimitiveEquationsSigma:
             implicit_terms=self.implicit_terms,
             implicit_inverse=self.implicit_inverse,
         )
+
+
+# Register PrimitiveEquationsSigma as a pytree node.  Its coords child is
+# itself pytree-registered (CoordinateSystem → Grid + SigmaCoordinates) so
+# Dynamo recursively traces all tensor children with correct devices.
+def __pes_flatten(pe: PrimitiveEquationsSigma):
+    children = (pe._buf, pe.coords)
+    context = {
+        "reference_temperature": pe.reference_temperature,
+        "physics_specs": pe.physics_specs,
+        "include_vertical_advection": pe.include_vertical_advection,
+        "humidity_key": pe.humidity_key,
+        "cloud_keys": pe.cloud_keys,
+        "_H_matrix": pe._H_matrix,
+        "_G_matrix": pe._G_matrix,
+        "_dsigma": pe._dsigma,
+    }
+    return children, context
+
+
+def __pes_unflatten(children, context):
+    buf, coords = children
+    pe = object.__new__(PrimitiveEquationsSigma)
+    pe._buf = buf
+    pe.coords = coords
+    for k, v in context.items():
+        setattr(pe, k, v)
+    return pe
+
+
+_reg_pytree_state(PrimitiveEquationsSigma, __pes_flatten, __pes_unflatten)
 
 
 # Aliases for convenience

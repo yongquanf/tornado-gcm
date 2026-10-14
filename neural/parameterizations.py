@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Neural parameterizations — Z3 (BF16) → Z1 boundary management.
 
@@ -264,12 +264,18 @@ class JaxAlignedDivCurlParameterization(nn.Module):
         output_sizes: number of levels per output key.
     """
 
-    # Default output fields (alphabetically sorted, matching 192 = 6×32)
+    # Default output fields ordered to match JAX pytree flattening:
+    # JAX's prediction_shapes nested dict {'temperature_variation': ...,
+    # 'tracers': {'specific_cloud_ice_water_content': ...,
+    #             'specific_cloud_liquid_water_content': ...,
+    #             'specific_humidity': ...}, 'u': ..., 'v': ...}
+    # flattens alphabetically with 'temperature_variation' < 'tracers' < 'u' < 'v'
+    # (because 'temperature_variation'[1]='e' < 'tracers'[1]='r').
     DEFAULT_OUTPUT_KEYS = [
+        "temperature_variation",
         "specific_cloud_ice_water_content",
         "specific_cloud_liquid_water_content",
         "specific_humidity",
-        "temperature_variation",
         "u",
         "v",
     ]
@@ -324,8 +330,11 @@ class JaxAlignedDivCurlParameterization(nn.Module):
         d["tracers"] = tracers
         if state.sim_time is not None:
             device = state.vorticity.device
-            d["sim_time"] = torch.tensor(
-                [state.sim_time], device=device, dtype=torch.float32,
+            # torch.tensor() from a Python scalar allocates new storage and is
+            # not CUDA-graph-capturable.  Use an existing tensor's device to
+            # create the output via a capturable path.
+            d["sim_time"] = state.vorticity.new_full(
+                (1,), float(state.sim_time), dtype=torch.float32,
             )
         return d
 
@@ -406,19 +415,17 @@ class JaxAlignedDivCurlParameterization(nn.Module):
         v_nodal = tendencies.get("v")
 
         if u_nodal is not None and v_nodal is not None:
-            # u,v are physical velocities in nodal space
-            # For spectral div/curl we need cos(lat)*u, cos(lat)*v
-            cos_lat = torch.tensor(
-                g.cos_lat, dtype=u_nodal.dtype, device=u_nodal.device,
-            )
-            cu = u_nodal * cos_lat
-            cv = v_nodal * cos_lat
+            # JAX ToModalWithDivCurlTransform multiplies u,v by sec_lat=1/cos_lat
+            # before to_modal, then calls div_cos_lat(u/cos_lat) which gives ∇·u.
+            sec_lat = 1.0 / g._buf._cos_lat_torch.to(dtype=u_nodal.dtype)
+            cu = u_nodal * sec_lat   # = u / cos_lat
+            cv = v_nodal * sec_lat   # = v / cos_lat
 
             # Nodal → modal
             cu_modal = g.to_modal(cu)
             cv_modal = g.to_modal(cv)
 
-            # Divergence = div(cos_lat * v_field)
+            # div_cos_lat(u/cos_lat) = ∇·(u/cos_lat * cos_lat) = ∇·u
             vor = g.curl_cos_lat((cu_modal, cv_modal))
             div = g.div_cos_lat((cu_modal, cv_modal))
         else:

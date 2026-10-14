@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Feature extraction modules for NeuralGCM — PyTorch implementation.
 
@@ -74,83 +74,113 @@ class FeatureModule(nn.Module):
 # ═══════════════════════════════════════════════════════════════════════════
 
 class RadiationFeatures(FeatureModule):
-    """Compute normalized solar radiation flux using cosine solar zenith angle.
+    """Compute normalized solar radiation flux matching dinosaur/radiation.py.
 
-    Implements the full CSZA model (matching dinosaur/radiation.py):
-      cos(θ_z) = cos(lat)·cos(δ)·cos(h) + sin(lat)·sin(δ)
-    where δ = declination, h = hour angle.
-
-    When sim_time is unavailable, falls back to time-mean cos(lat) approx.
+    Implements JAX SolarRadiation.normalized exactly:
+    1. Converts nondimensional sim_time to orbital/synodic phases using
+       reference_datetime and the physical time scale (1/(2*OMEGA)).
+    2. Applies equation-of-time correction to the hour angle.
+    3. Multiplies by normalized direct solar irradiance (TSI/scale + variation/scale).
+    4. Clips negative values (nighttime) to zero.
     """
 
-    # Constants (matching dinosaur/radiation.py)
-    EARTH_AXIS_INCLINATION = 23.45 * np.pi / 180.0  # radians
-    SPRING_EQUINOX_PHASE = 2 * np.pi * 79.0 / 365.25  # ~Mar 20
-    TSI = 1361.0  # W/m² (total solar irradiance)
+    # Constants matching dinosaur/radiation.py
+    _DAYS_PER_YEAR = 365.25
+    _MINUTES_PER_DAY = 1440
+    _SPRING_EQUINOX = 79.0 * 2.0 * np.pi / 365.25        # rad
+    _PERIHELION = 3.0 * 2.0 * np.pi / 365.25              # rad
+    _EARTH_AXIS_INCLINATION = 23.45 * np.pi / 180.0        # rad
+    _TSI = 1361.0        # W/m²
+    _TSI_VARIATION = 47.0  # W/m²
+    _TSI_SCALE = 1361.0 + 47.0  # 1408.0  — normalization denominator
+    # Physical time scale: 1 nondim unit = 1/(2*OMEGA) seconds
+    _OMEGA = 7.292e-5    # rad/s
 
     def __init__(
         self,
         grid: spherical_harmonic.Grid,
-        reference_datetime_ordinal: float = 0.0,
-        time_scale_hours: float = 1.0,
+        reference_datetime_str: str = "1979-01-01T00",
     ):
+        import datetime as _dt
         super().__init__()
         self.grid = grid
-        self.reference_datetime_ordinal = reference_datetime_ordinal
-        self.time_scale_hours = time_scale_hours
 
-    def _orbital_phase(self, sim_time: float) -> float:
-        """Convert sim_time to orbital phase (0..2π over a year)."""
-        hours = sim_time * self.time_scale_hours
-        days_since_ref = hours / 24.0 + self.reference_datetime_ordinal
-        return 2 * np.pi * days_since_ref / 365.25
+        # Parse reference datetime (matches JAX datetime_to_orbital_time)
+        ref = _dt.datetime.fromisoformat(reference_datetime_str)
+        days_in_year = _dt.datetime(ref.year, 12, 31).timetuple().tm_yday
+        full_days = ref.timetuple().tm_yday - 1
+        frac_day = (60 * ref.hour + ref.minute) / self._MINUTES_PER_DAY
+        frac_year = (full_days + frac_day) / days_in_year
+        self._ref_orbital: float = 2.0 * np.pi * frac_year
+        self._ref_synodic: float = 2.0 * np.pi * frac_day
 
-    def _synodic_phase(self, sim_time: float) -> float:
-        """Convert sim_time to synodic phase (0..2π over a day)."""
-        hours = sim_time * self.time_scale_hours
-        return 2 * np.pi * (hours % 24.0) / 24.0
+        # Nondim rates: 2π per year/day in nondim time units
+        time_scale_s = 1.0 / (2.0 * self._OMEGA)   # seconds per nondim unit
+        self._orbital_rate: float = 2.0 * np.pi / (self._DAYS_PER_YEAR * 86400.0 / time_scale_s)
+        self._synodic_rate: float = 2.0 * np.pi / (86400.0 / time_scale_s)
 
     def forward(
         self,
         inputs: Dict[str, torch.Tensor],
         memory=None, diagnostics=None, randomness=None, forcing=None,
     ) -> Dict[str, torch.Tensor]:
-        device = next(iter(inputs.values())).device
-        lon_rad, sin_lat = self.grid.nodal_axes
-        lon_t = torch.tensor(lon_rad, dtype=torch.float32, device=device)
-        sin_lat_t = torch.tensor(sin_lat, dtype=torch.float32, device=device)
+        ref = next(iter(inputs.values()))
+        device = ref.device
+        lon_t = self.grid._buf._lon_torch.to(device=ref.device, dtype=ref.dtype).to(dtype=torch.float32)
+        sin_lat_t = self.grid._buf._sin_lat_torch.to(device=ref.device, dtype=ref.dtype).to(dtype=torch.float32)
         cos_lat_t = torch.sqrt(1.0 - sin_lat_t ** 2)
 
-        # Check if sim_time is available for full CSZA
-        sim_time = inputs.get("sim_time")
-        if sim_time is not None:
-            st = float(sim_time.mean())
-            orbital = self._orbital_phase(st)
-            synodic = self._synodic_phase(st)
+        sim_time_t = inputs.get("sim_time")
+        if sim_time_t is not None:
+            # Pure-torch path: keep everything as tensor scalars for
+            # torch.export / Dynamo compatibility (no data-dependent
+            # Python float() calls).  Matches JAX math exactly.
+            st = sim_time_t.mean()  # tensor scalar (0-d)
+            two_pi = 2.0 * torch.pi
+            ref_orbital = torch.tensor(self._ref_orbital, device=device, dtype=torch.float64)
+            ref_synodic = torch.tensor(self._ref_synodic, device=device, dtype=torch.float64)
+            orbital_rate = torch.tensor(self._orbital_rate, device=device, dtype=torch.float64)
+            synodic_rate = torch.tensor(self._synodic_rate, device=device, dtype=torch.float64)
 
-            # Solar declination
-            declination = self.EARTH_AXIS_INCLINATION * np.sin(
-                orbital - self.SPRING_EQUINOX_PHASE
-            )
-            sin_dec = np.sin(declination)
-            cos_dec = np.cos(declination)
+            orbital = ref_orbital + orbital_rate * st
+            synodic = ref_synodic + synodic_rate * st
+            # Single-step reduction to shrink magnitude (matches JAX)
+            orbital = orbital - torch.floor(orbital / two_pi) * two_pi
+            synodic = synodic - torch.floor(synodic / two_pi) * two_pi
 
-            # Hour angle = synodic + longitude - π
-            hour_angle = synodic + lon_t - np.pi  # (lon,)
+            # Solar declination (torch trig)
+            spring_eq = torch.tensor(self._SPRING_EQUINOX, device=device, dtype=torch.float64)
+            axis_incl = torch.tensor(self._EARTH_AXIS_INCLINATION, device=device, dtype=torch.float64)
+            sin_dec = torch.sin(axis_incl * torch.sin(orbital - spring_eq))
+            cos_dec = torch.cos(axis_incl * torch.sin(orbital - spring_eq))
+
+            # Equation of time (torch trig)
+            b = orbital - spring_eq
+            eot_min = 9.87 * torch.sin(2.0 * b) - 7.53 * torch.cos(b) - 1.5 * torch.sin(b)
+            eot = two_pi * eot_min / self._MINUTES_PER_DAY
+
+            # Hour angle: matches JAX get_hour_angle
+            hour_angle = synodic + eot + lon_t.to(torch.float64) - torch.pi  # (lon,)
 
             # CSZA = cos(lat)·cos(dec)·cos(h) + sin(lat)·sin(dec)
-            # Shape: (lon, lat)
             csza = (
-                cos_lat_t.unsqueeze(0) * cos_dec * torch.cos(hour_angle).unsqueeze(1)
-                + sin_lat_t.unsqueeze(0) * sin_dec
-            )
+                cos_lat_t.unsqueeze(0).to(torch.float64) * cos_dec
+                * torch.cos(hour_angle).unsqueeze(1)
+                + sin_lat_t.unsqueeze(0).to(torch.float64) * sin_dec
+            )  # (lon, lat)
 
-            # Clip to daytime only (negative = nighttime)
-            radiation = torch.clamp(csza, min=0.0).unsqueeze(0)  # (1, lon, lat)
+            # Normalized direct solar irradiance
+            perihelion = torch.tensor(self._PERIHELION, device=device, dtype=torch.float64)
+            tsi = torch.tensor(self._TSI, device=device, dtype=torch.float64)
+            tsi_var = torch.tensor(self._TSI_VARIATION, device=device, dtype=torch.float64)
+            tsi_scale = torch.tensor(self._TSI_SCALE, device=device, dtype=torch.float64)
+            flux = (tsi + tsi_var * torch.cos(orbital - perihelion)) / tsi_scale
+
+            # Daytime only: clamp(csza * flux, min=0)
+            radiation = torch.clamp(csza * flux, min=0.0).unsqueeze(0).to(torch.float32)  # (1, lon, lat)
         else:
-            # Fallback: time-mean approximation = cos(lat)
-            cos_lat = cos_lat_t.unsqueeze(0)  # (1, lat)
-            radiation = cos_lat.unsqueeze(0).expand(
+            # Fallback: time-mean approximation ≈ cos(lat)
+            radiation = cos_lat_t.unsqueeze(0).unsqueeze(0).expand(
                 1, self.grid.nodal_shape[-2], -1
             )
 
@@ -183,9 +213,12 @@ class ForcingFeatures(FeatureModule):
         for key in self.forcing_to_include:
             if key in forcing:
                 val = forcing[key]
-                # Ensure 3D: (1, lon, lat) for surface fields
+                if not isinstance(val, torch.Tensor):
+                    val = torch.as_tensor(val)
                 if val.ndim == 2:
-                    val = val.unsqueeze(0)
+                    val = val.unsqueeze(0)                     # (H,W) → (1,H,W)
+                elif val.ndim == 4:
+                    val = val[0]                                # (B,1,H,W) → (1,H,W)
                 out[key] = val
         return out
 
@@ -274,9 +307,9 @@ class LatitudeFeatures(FeatureModule):
         inputs: Dict[str, torch.Tensor],
         memory=None, diagnostics=None, randomness=None, forcing=None,
     ) -> Dict[str, torch.Tensor]:
-        device = next(iter(inputs.values())).device
-        _, sin_lat = self.grid.nodal_axes
-        sin_lat_t = torch.tensor(sin_lat, dtype=torch.float32, device=device)
+        ref = next(iter(inputs.values()))
+        device = ref.device
+        sin_lat_t = self.grid._buf._sin_lat_torch.to(device=ref.device, dtype=ref.dtype).to(dtype=torch.float32)
         cos_lat_t = torch.sqrt(1.0 - sin_lat_t ** 2)
 
         n_lon = self.grid.nodal_shape[-2]
@@ -369,7 +402,7 @@ class VelocityAndPrognostics(FeatureModule):
         # Compute cos_lat*u, cos_lat*v from vorticity + divergence
         if "vorticity" in inputs and "divergence" in inputs:
             cos_lat_uv = spherical_harmonic.get_cos_lat_vector(
-                inputs["vorticity"], inputs["divergence"], grid, clip=False,
+                inputs["vorticity"], inputs["divergence"], grid, clip=True,
             )
             modal_features[KeyWithCosLatFactor(prefix + "u", 1)] = cos_lat_uv[0]
             modal_features[KeyWithCosLatFactor(prefix + "v", 1)] = cos_lat_uv[1]
@@ -401,14 +434,10 @@ class VelocityAndPrognostics(FeatureModule):
             diff_features = {}
 
         # --- convert all to nodal with sec(lat)^order weighting ---
-        sec_lat = torch.tensor(
-            1.0 / grid.cos_lat, dtype=torch.float32,
-            device=next(iter(inputs.values())).device,
-        )
-        sec2_lat = torch.tensor(
-            grid.sec2_lat, dtype=torch.float32,
-            device=next(iter(inputs.values())).device,
-        )
+        _ref = next(iter(inputs.values()))
+        _cos_lat = grid._buf._cos_lat_torch.to(device=_ref.device, dtype=_ref.dtype).to(dtype=torch.float32)
+        sec_lat = 1.0 / _cos_lat
+        sec2_lat = grid._buf._sec2_lat_torch.to(device=_ref.device, dtype=_ref.dtype).to(dtype=torch.float32)
         sec_scales = {0: None, 1: sec_lat, 2: sec2_lat}
 
         nodal_features: Dict[str, torch.Tensor] = {}
@@ -542,7 +571,7 @@ class FloatDataFeatures(FeatureModule):
         device = next(iter(inputs.values())).device
         features: Dict[str, torch.Tensor] = {}
         for key in self._cov_keys:
-            features[key] = getattr(self, f"_cov_{key}").to(device)
+            features[key] = getattr(self, f"_cov_{key}")
 
         if self.compute_gradients_fn is not None:
             grid = self.grid
@@ -552,12 +581,9 @@ class FloatDataFeatures(FeatureModule):
                 for k, v in features.items()
             }
             modal_grads = self.compute_gradients_fn(modal_features)
-            sec_lat = torch.tensor(
-                1.0 / grid.cos_lat, dtype=torch.float32, device=device,
-            )
-            sec2_lat = torch.tensor(
-                grid.sec2_lat, dtype=torch.float32, device=device,
-            )
+            _ref_mg = next(iter(modal_features.values()))
+            sec_lat = (1.0 / grid._buf._cos_lat_torch.to(device=_ref_mg.device, dtype=_ref_mg.dtype)).to(dtype=torch.float32)
+            sec2_lat = grid._buf._sec2_lat_torch.to(device=_ref_mg.device, dtype=_ref_mg.dtype).to(dtype=torch.float32)
             sec_scales = {0: None, 1: sec_lat, 2: sec2_lat}
             for key, val in modal_grads.items():
                 name, order = key
@@ -665,12 +691,9 @@ class EmbeddingVolumeFeatures(FeatureModule):
         # Compute u, v from vorticity + divergence
         if "vorticity" in inputs and "divergence" in inputs:
             cos_lat_uv = spherical_harmonic.get_cos_lat_vector(
-                inputs["vorticity"], inputs["divergence"], grid, clip=False,
+                inputs["vorticity"], inputs["divergence"], grid, clip=True,
             )
-            sec_lat = torch.tensor(
-                1.0 / grid.cos_lat, dtype=torch.float32,
-                device=cos_lat_uv[0].device,
-            )
+            sec_lat = (1.0 / grid._buf._cos_lat_torch.to(device=cos_lat_uv[0].device, dtype=torch.float32))
             features["u"] = grid.to_nodal(cos_lat_uv[0]) * sec_lat
             features["v"] = grid.to_nodal(cos_lat_uv[1]) * sec_lat
 
@@ -743,10 +766,18 @@ class EmbeddingVolumeFeatures(FeatureModule):
         # Run conv tower: (n_channels, n_levels, lon, lat) → (n_output, n_levels, lon, lat)
         result = self.conv_tower(stacked)
 
-        # Split into named features: CNN1D_0 → (n_levels, lon, lat), etc.
+        # Split into named features, assigning in alphabetical key order.
+        # JAX's pytree_utils.unstack_to_pytree uses jax.tree_util.tree_flatten
+        # which sorts dict keys alphabetically, so result[k] maps to the k-th
+        # alphabetically sorted key name (not the k-th numeric key).
+        # e.g., for 32 outputs: result[2] → "CNN1D_10" (3rd alphabetically),
+        #   NOT "CNN1D_2" (3rd numerically).
+        key_names = sorted(
+            [f"{self.feature_name}_{i}" for i in range(self.n_output)]
+        )
         out: Dict[str, torch.Tensor] = {}
-        for i in range(self.n_output):
-            out[f"{self.feature_name}_{i}"] = result[i]
+        for k, key in enumerate(key_names):
+            out[key] = result[k]
         return out
 
 
@@ -779,14 +810,16 @@ class EmbeddingSurfaceFeatures(FeatureModule):
     def __init__(
         self,
         grid: spherical_harmonic.Grid,
-        land_epd: nn.Module,
+        land_epd: Optional[nn.Module],
         sea_epd: nn.Module,
-        sea_ice_epd: nn.Module,
+        sea_ice_epd: Optional[nn.Module],
         land_sea_mask: torch.Tensor,
         land_norm: tuple[Dict[str, float], Dict[str, float]],
         sea_norm: tuple[Dict[str, float], Dict[str, float]],
         sea_ice_norm: tuple[Dict[str, float], Dict[str, float]],
         output_size: int = 8,
+        land_bias: Optional[nn.Parameter] = None,
+        sea_ice_bias: Optional[nn.Parameter] = None,
     ):
         super().__init__()
         self.grid = grid
@@ -800,6 +833,28 @@ class EmbeddingSurfaceFeatures(FeatureModule):
         self.land_scales, self.land_shifts = land_norm
         self.sea_scales, self.sea_shifts = sea_norm
         self.sea_ice_scales, self.sea_ice_shifts = sea_ice_norm
+        # "Bias-only" mode (JAX det 1.4°/0.7°): per-surface constant params
+        # (output_size, 1, 1) broadcast to (output_size, lon, lat) instead of
+        # running a learned Epd on real state features. Land / sea_ice may
+        # independently be either an Epd tower or a bias parameter — exactly
+        # one of ``{land_epd, land_bias}`` (resp. sea_ice) must be provided.
+        if (land_epd is None) == (land_bias is None):
+            raise ValueError(
+                "EmbeddingSurfaceFeatures: exactly one of {land_epd, "
+                "land_bias} must be provided."
+            )
+        if (sea_ice_epd is None) == (sea_ice_bias is None):
+            raise ValueError(
+                "EmbeddingSurfaceFeatures: exactly one of {sea_ice_epd, "
+                "sea_ice_bias} must be provided."
+            )
+        # Store bias params as Parameters (matches how ``LearnedPositional-
+        # Features`` shares ``physics_positional`` with JaxNeuralComponents).
+        # None values are simply not registered.
+        if land_bias is not None:
+            self.land_bias = land_bias
+        if sea_ice_bias is not None:
+            self.sea_ice_bias = sea_ice_bias
 
     def _extract_bottom_level_features(
         self,
@@ -813,12 +868,9 @@ class EmbeddingSurfaceFeatures(FeatureModule):
         # Compute u, v from vorticity + divergence
         if "vorticity" in inputs and "divergence" in inputs:
             cos_lat_uv = spherical_harmonic.get_cos_lat_vector(
-                inputs["vorticity"], inputs["divergence"], grid, clip=False,
+                inputs["vorticity"], inputs["divergence"], grid, clip=True,
             )
-            sec_lat = torch.tensor(
-                1.0 / grid.cos_lat, dtype=torch.float32,
-                device=cos_lat_uv[0].device,
-            )
+            sec_lat = (1.0 / grid._buf._cos_lat_torch.to(device=cos_lat_uv[0].device, dtype=torch.float32))
             if "u" in fields:
                 u_nodal = grid.to_nodal(cos_lat_uv[0]) * sec_lat
                 features["u"] = u_nodal[-1:, :, :]  # bottom level
@@ -857,9 +909,23 @@ class EmbeddingSurfaceFeatures(FeatureModule):
         return out
 
     def _pack_sorted(self, features: Dict[str, torch.Tensor]) -> torch.Tensor:
-        """Pack features in sorted key order → (n_features, lon, lat)."""
-        parts = [features[k] for k in sorted(features.keys())]
+        """Pack features in sorted key order → (n_features, ..., lon, lat)."""
+        parts = []
+        for k in sorted(features.keys()):
+            t = features[k]
+            if t.ndim == 2:
+                t = t.unsqueeze(0)                     # (H,W) → (1,H,W)
+            elif t.ndim == 4:
+                t = t[0]                                # (B,1,H,W) → (1,H,W)
+            parts.append(t)
         return torch.cat(parts, dim=0)
+
+    @staticmethod
+    def _to_torch(val, device: torch.device) -> torch.Tensor:
+        """Convert array-like to torch tensor on *device* (no-op if already)."""
+        if isinstance(val, torch.Tensor):
+            return val.to(device=device)
+        return torch.as_tensor(val, device=device)
 
     def forward(
         self,
@@ -869,11 +935,23 @@ class EmbeddingSurfaceFeatures(FeatureModule):
     ) -> Dict[str, torch.Tensor]:
         device = next(iter(inputs.values())).device
 
+        # Convert any numpy arrays in forcing to torch tensors (HPS / ERA5 paths).
+        if forcing is not None:
+            forcing = {k: self._to_torch(v, device) for k, v in forcing.items()}
+
         # --- Land features (4): specific_humidity, temperature_variation, u, v ---
-        land_feat = self._extract_bottom_level_features(inputs)
-        land_feat = self._normalize(land_feat, self.land_scales, self.land_shifts)
-        land_packed = self._pack_sorted(land_feat)
-        land_out = self.land_epd(land_packed)  # (8, lon, lat)
+        # In bias-only mode (land_epd is None) we skip feature extraction
+        # entirely and use the per-surface constant bias broadcast across the
+        # nodal grid (matches JAX ``NodalLandSeaIceEmbedding`` bias-only fn).
+        if self.land_epd is not None:
+            land_feat = self._extract_bottom_level_features(inputs)
+            land_feat = self._normalize(land_feat, self.land_scales, self.land_shifts)
+            land_packed = self._pack_sorted(land_feat)
+            land_out = self.land_epd(land_packed)  # (8, lon, lat)
+        else:
+            # ``land_bias`` shape (output_size, 1, 1) broadcasts across lon/lat
+            # when multiplied by land_weight (1, lon, lat) below.
+            land_out = self.land_bias.to(device=device)
 
         # --- Sea features (1): sea_surface_temperature ---
         sea_feat: Dict[str, torch.Tensor] = {}
@@ -881,35 +959,44 @@ class EmbeddingSurfaceFeatures(FeatureModule):
             sst = forcing["sea_surface_temperature"]
             if sst.ndim == 2:
                 sst = sst.unsqueeze(0)
-            sea_feat["sea_surface_temperature"] = sst.to(device)
+            sea_feat["sea_surface_temperature"] = sst.to(device=device)
         sea_feat = self._normalize(sea_feat, self.sea_scales, self.sea_shifts)
+        # Fallback synthetic SST field: use the grid nodal shape (from
+        # ``_land_mask``) rather than ``land_out.shape[1:]`` because in
+        # bias-only mode ``land_out`` is (output_size, 1, 1).
+        _nodal_shape = self._land_mask.shape[-2:]
         sea_packed = self._pack_sorted(sea_feat) if sea_feat else torch.zeros(
-            1, *land_out.shape[1:], device=device, dtype=land_out.dtype,
+            1, *_nodal_shape, device=device, dtype=land_out.dtype,
         )
         sea_out = self.sea_epd(sea_packed)
 
         # --- Sea ice features (5): sea_ice_cover, specific_humidity, temp_var, u, v ---
-        ice_feat = self._extract_bottom_level_features(inputs)
-        if forcing is not None and "sea_ice_cover" in forcing:
-            sic = forcing["sea_ice_cover"]
-            if sic.ndim == 2:
-                sic = sic.unsqueeze(0)
-            ice_feat["sea_ice_cover"] = sic.to(device)
-        elif "sea_ice_cover" not in ice_feat:
-            # Synthetic / offline IC often has no forcings: sea_ice_epd still expects 5 channels.
-            ref = next(iter(ice_feat.values()), None)
-            if ref is not None:
-                ice_feat["sea_ice_cover"] = torch.zeros_like(ref)
-            else:
-                ice_feat["sea_ice_cover"] = torch.zeros(
-                    1, *land_out.shape[1:], device=device, dtype=land_out.dtype,
-                )
-        ice_feat = self._normalize(ice_feat, self.sea_ice_scales, self.sea_ice_shifts)
-        ice_packed = self._pack_sorted(ice_feat)
-        ice_out = self.sea_ice_epd(ice_packed)
+        # In bias-only mode (sea_ice_epd is None), skip feature extraction and
+        # use the per-surface constant bias broadcast across the nodal grid.
+        if self.sea_ice_epd is not None:
+            ice_feat = self._extract_bottom_level_features(inputs)
+            if forcing is not None and "sea_ice_cover" in forcing:
+                sic = forcing["sea_ice_cover"]
+                if sic.ndim == 2:
+                    sic = sic.unsqueeze(0)
+                ice_feat["sea_ice_cover"] = sic.to(device=device)
+            elif "sea_ice_cover" not in ice_feat:
+                # Synthetic / offline IC often has no forcings: sea_ice_epd still expects 5 channels.
+                ref = next(iter(ice_feat.values()), None)
+                if ref is not None:
+                    ice_feat["sea_ice_cover"] = torch.zeros_like(ref)
+                else:
+                    ice_feat["sea_ice_cover"] = torch.zeros(
+                        1, *_nodal_shape, device=device, dtype=land_out.dtype,
+                    )
+            ice_feat = self._normalize(ice_feat, self.sea_ice_scales, self.sea_ice_shifts)
+            ice_packed = self._pack_sorted(ice_feat)
+            ice_out = self.sea_ice_epd(ice_packed)
+        else:
+            ice_out = self.sea_ice_bias.to(device=device)
 
         # --- Combine with land/sea/ice fractions ---
-        land_frac = self._land_mask.to(device=device, dtype=land_out.dtype)
+        land_frac = self._land_mask.to(dtype=land_out.dtype)
         sea_frac = 1.0 - land_frac
         sea_ice_frac = torch.zeros_like(land_frac)
         if forcing is not None and "sea_ice_cover" in forcing:
@@ -945,6 +1032,8 @@ def pack_features(features: Dict[str, torch.Tensor]) -> torch.Tensor:
     for key in sorted(features.keys()):
         val = features[key]
         if val.ndim == 2:
-            val = val.unsqueeze(0)
+            val = val.unsqueeze(0)                     # (H,W) → (1,H,W)
+        elif val.ndim == 4:
+            val = val[0]                                # (B,1,H,W) → (1,H,W)
         parts.append(val)
     return torch.cat(parts, dim=0)

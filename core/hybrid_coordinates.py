@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Hybrid sigma-pressure vertical coordinate system — PyTorch implementation.
 
@@ -13,8 +13,23 @@ import functools
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from tornado_gcm.core import sigma_coordinates
+
+
+class _HybridBuffers(nn.Module):
+    """Internal nn.Module holding HybridCoordinates' static tensors as buffers."""
+
+    def __init__(self):
+        super().__init__()
+
+    def _init(self, _a_bnd, _b_bnd, _p_thick, _s_thick, _c2c):
+        self.register_buffer("_a_boundaries_torch", torch.from_numpy(_a_bnd.copy()).to(torch.float64))
+        self.register_buffer("_b_boundaries_torch", torch.from_numpy(_b_bnd.copy()).to(torch.float64))
+        self.register_buffer("_pressure_thickness_torch", torch.from_numpy(_p_thick.copy()).to(torch.float64))
+        self.register_buffer("_sigma_thickness_torch", torch.from_numpy(_s_thick.copy()).to(torch.float64))
+        self.register_buffer("_center_to_center_torch", torch.from_numpy(_c2c.copy()).to(torch.float64))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -39,6 +54,17 @@ class HybridCoordinates:
                 "a_boundaries and b_boundaries must have the same length; "
                 f"got {len(self.a_boundaries)} and {len(self.b_boundaries)}."
             )
+        _p_thick = np.diff(self.a_boundaries)
+        _s_thick = np.diff(self.b_boundaries)
+        _b_centers = (self.b_boundaries[1:] + self.b_boundaries[:-1]) / 2
+        _c2c = np.diff(_b_centers)
+        _buf = _HybridBuffers()
+        _buf._init(self.a_boundaries, self.b_boundaries, _p_thick, _s_thick, _c2c)
+        object.__setattr__(self, "_buf", _buf)
+
+    def to(self, device: torch.device | str) -> None:
+        """Move all static tensors to *device* (in-place)."""
+        self._buf.to(device=torch.device(device))
 
     @classmethod
     def from_coefficients(
@@ -115,10 +141,8 @@ class HybridCoordinates:
 
     def pressure_boundaries(self, surface_pressure: torch.Tensor) -> torch.Tensor:
         """Boundaries of each layer in pressure units."""
-        a = torch.tensor(self.a_boundaries, dtype=surface_pressure.dtype,
-                         device=surface_pressure.device)
-        b = torch.tensor(self.b_boundaries, dtype=surface_pressure.dtype,
-                         device=surface_pressure.device)
+        a = self._buf._a_boundaries_torch.to(dtype=surface_pressure.dtype)
+        b = self._buf._b_boundaries_torch.to(dtype=surface_pressure.dtype)
         # a: (layers+1,), surface_pressure: (...,)
         ndim = surface_pressure.dim()
         for _ in range(ndim):
@@ -133,14 +157,8 @@ class HybridCoordinates:
 
     def layer_thickness(self, surface_pressure: torch.Tensor) -> torch.Tensor:
         """Thickness of each layer in pressure units."""
-        p_thick = torch.tensor(
-            self.pressure_thickness, dtype=surface_pressure.dtype,
-            device=surface_pressure.device,
-        )
-        s_thick = torch.tensor(
-            self.sigma_thickness, dtype=surface_pressure.dtype,
-            device=surface_pressure.device,
-        )
+        p_thick = self._buf._pressure_thickness_torch.to(dtype=surface_pressure.dtype)
+        s_thick = self._buf._sigma_thickness_torch.to(dtype=surface_pressure.dtype)
         ndim = surface_pressure.dim()
         for _ in range(ndim):
             p_thick = p_thick.unsqueeze(-1)
@@ -168,6 +186,31 @@ class HybridCoordinates:
         )
 
 
+# Register HybridCoordinates as a pytree node so Dynamo traces its tensor
+# children with correct FakeTensor device propagation.
+def __hybrid_flatten(hc: HybridCoordinates):
+    children = (hc._buf,)
+    context = {
+        "a_boundaries": hc.a_boundaries,
+        "b_boundaries": hc.b_boundaries,
+    }
+    return children, context
+
+
+def __hybrid_unflatten(children, context):
+    (buf,) = children
+    hc = HybridCoordinates(
+        a_boundaries=context["a_boundaries"],
+        b_boundaries=context["b_boundaries"],
+    )
+    object.__setattr__(hc, "_buf", buf)
+    return hc
+
+
+from torch.utils._pytree import register_pytree_node as _reg_pytree_hybrid
+_reg_pytree_hybrid(HybridCoordinates, __hybrid_flatten, __hybrid_unflatten)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Vertical calculus on hybrid coordinates
 # ═══════════════════════════════════════════════════════════════════════════
@@ -180,12 +223,12 @@ def cumulative_integral_over_pressure(
     downward: bool = True,
 ) -> torch.Tensor:
     """Cumulative integral of x w.r.t. pressure."""
-    a_thick = torch.tensor(
-        coordinates.pressure_thickness, dtype=x.dtype, device=x.device,
-    ).reshape(-1, 1, 1)
-    b_thick = torch.tensor(
-        coordinates.sigma_thickness, dtype=x.dtype, device=x.device,
-    ).reshape(-1, 1, 1)
+    a_thick = coordinates._buf._pressure_thickness_torch.to(device=x
+        .device, dtype=x
+        .dtype).reshape(-1, 1, 1)
+    b_thick = coordinates._buf._sigma_thickness_torch.to(device=x
+        .device, dtype=x
+        .dtype).reshape(-1, 1, 1)
     dp = a_thick + b_thick * surface_pressure
     xdp = x * dp
     if downward:
@@ -202,12 +245,12 @@ def integral_over_pressure(
     keepdims: bool = True,
 ) -> torch.Tensor:
     """Definite integral of x over pressure."""
-    a_thick = torch.tensor(
-        coordinates.pressure_thickness, dtype=x.dtype, device=x.device,
-    ).reshape(-1, 1, 1)
-    b_thick = torch.tensor(
-        coordinates.sigma_thickness, dtype=x.dtype, device=x.device,
-    ).reshape(-1, 1, 1)
+    a_thick = coordinates._buf._pressure_thickness_torch.to(device=x
+        .device, dtype=x
+        .dtype).reshape(-1, 1, 1)
+    b_thick = coordinates._buf._sigma_thickness_torch.to(device=x
+        .device, dtype=x
+        .dtype).reshape(-1, 1, 1)
     x_da = (x * a_thick).sum(dim=axis, keepdim=keepdims)
     x_db = (x * b_thick).sum(dim=axis, keepdim=keepdims)
     return x_da + surface_pressure * x_db
@@ -220,9 +263,7 @@ def centered_difference(
 ) -> torch.Tensor:
     """∂x/∂η at layer boundaries via centered differences."""
     dx = torch.diff(x, dim=axis)
-    inv_deta = torch.tensor(
-        1.0 / coordinates.center_to_center, dtype=x.dtype, device=x.device,
-    ).reshape(-1, 1, 1)
+    inv_deta = 1.0 / coordinates._buf._center_to_center_torch.to(device=x.device, dtype=x.dtype).reshape(-1, 1, 1)
     return dx * inv_deta
 
 

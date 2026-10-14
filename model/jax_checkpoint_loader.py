@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Load JAX NeuralGCM checkpoint into a PyTorch model.
 
@@ -58,6 +58,63 @@ SURFACE_MODEL_LATENT_SIZE = 8
 SURFACE_MODEL_LAYER_SIZE = 8
 SURFACE_MODEL_OUTPUT_SIZE = 8
 POSITIONAL_LATENT_SIZE = 8
+
+# ── Resolution → grid / architecture specs ───────────────────────────────
+# Each JAX checkpoint uses a specific spectral grid with corresponding
+# positional embedding dimensions.
+_JAX_RESOLUTION_SPECS: dict[str, dict] = {
+    "2.8": {
+        "grid_name": "TL63",
+        "nodal_lon": 128,
+        "nodal_lat": 64,
+        "max_wavenumber": 63,
+        "positional_channels": 8,
+        "gin_stem": "deterministic_2_8_deg",
+        # Architecture dimensions matching JAX checkpoint tensor shapes
+        "physics_epd_input": 2365,
+        "encoder_epd_input": 1052,
+        "decoder_epd_input": 784,
+        "corrector_orog_size": 4094,
+        "encoder_orog_size": 4223,
+        "surface_embed_inputs": [4, 1, 5],  # land, sea, ice
+    },
+    "1.4": {
+        "grid_name": "TL127",
+        "nodal_lon": 256,
+        "nodal_lat": 128,
+        "max_wavenumber": 127,
+        "positional_channels": 32,
+        "gin_stem": "deterministic_1_4_deg",
+        "physics_epd_input": 2389,
+        "encoder_epd_input": 1076,
+        "decoder_epd_input": 297,
+        "corrector_orog_size": 16127,
+        "encoder_orog_size": 16639,
+        "surface_embed_inputs": [1],  # sea only (SST); land/ice use bias params
+        # JAX NodalLandSeaIceEmbedding "bias-only" mode: land / sea_ice
+        # contributions are per-surface constant parameters (8,1,1) broadcast
+        # across lon/lat, not learned Epd towers.
+        "land_ice_biases": True,
+        # Decoder has its own learned_orography parameter here too.
+        "decoder_orog_size": 16639,
+    },
+    "0.7": {
+        "grid_name": "TL255",
+        "nodal_lon": 512,
+        "nodal_lat": 256,
+        "max_wavenumber": 255,
+        "positional_channels": 32,
+        "gin_stem": "deterministic_0_7_deg",
+        "physics_epd_input": 2389,
+        "encoder_epd_input": 1076,
+        "decoder_epd_input": 297,
+        "corrector_orog_size": 65023,
+        "encoder_orog_size": 66047,
+        "surface_embed_inputs": [1],  # sea only (SST); land/ice use bias params
+        "land_ice_biases": True,
+        "decoder_orog_size": 66047,
+    },
+}
 
 # EPD dimensions (from JAX param shapes)
 PHYSICS_EPD_INPUT = 2365
@@ -338,14 +395,16 @@ def build_volume_conv_tower() -> VerticalConvTower:
       conv_3: (64 → 64)
       conv_4: (64 → 32)
 
-    JAX uses relu activation (not gelu) for vertical conv.
+    JAX uses gelu activation (ACTIVATION = @gelu in gin config).
+    JAX jax.nn.gelu defaults to approximate=True (tanh), so use the tanh
+    approximation in PT to match.
     """
     return VerticalConvTower(
         input_channels=VOLUME_CONV_INPUT_CH,
         output_channels=VOLUME_CONV_OUTPUT_CH,
         hidden_channels=VOLUME_CONV_HIDDEN_CH,
         kernel_size=VOLUME_CONV_KERNEL,
-        activation=F.relu,
+        activation=lambda x: F.gelu(x, approximate='tanh'),
         activate_final=False,
         use_bias=True,
     )
@@ -379,54 +438,69 @@ class JaxNeuralComponents(nn.Module):
       decoder_positional   — Parameter(8, 128, 64)
     """
 
-    def __init__(self):
+    def __init__(self, resolution: str = "2.8"):
         super().__init__()
+        _spec = _JAX_RESOLUTION_SPECS[resolution]
+        _pl = _spec["positional_channels"]
+        _nl = _spec["nodal_lon"]
+        _na = _spec["nodal_lat"]
+        _pi = _spec["physics_epd_input"]
+        _ei = _spec["encoder_epd_input"]
+        _di = _spec["decoder_epd_input"]
+        _co = _spec["corrector_orog_size"]
+        _eo = _spec["encoder_orog_size"]
+        _se = _spec["surface_embed_inputs"]
+        # Optional: decoder learned_orography (det 1.4°/0.7°).
+        _do = _spec.get("decoder_orog_size")
+        # Optional: JAX bias-only surface embedding (det 1.4°/0.7°).
+        _land_ice_biases = bool(_spec.get("land_ice_biases", False))
+        self._land_ice_biases = _land_ice_biases
 
         # ── Physics Parameterization ─────────────────────────────────
-        self.physics_epd = build_epd_tower(
-            PHYSICS_EPD_INPUT, PHYSICS_EPD_OUTPUT,
-        )
+        self.physics_epd = build_epd_tower(_pi, PHYSICS_EPD_OUTPUT)
         self.physics_positional = nn.Parameter(
-            torch.randn(POSITIONAL_LATENT_SIZE, 128, 64) * 0.01
+            torch.randn(_pl, _nl, _na) * 0.01
         )
         self.physics_surface_embeds = nn.ModuleList([
-            build_surface_epd(in_size)
-            for in_size in SURFACE_EMBED_INPUTS
+            build_surface_epd(in_size) for in_size in _se
         ])
+        if _land_ice_biases:
+            # Per-surface constant bias params (JAX ``land_params`` /
+            # ``sea_ice_params``): shape (output_size, 1, 1) broadcast to
+            # (output_size, lon, lat) inside EmbeddingSurfaceFeatures.
+            self.physics_land_bias = nn.Parameter(
+                torch.zeros(SURFACE_MODEL_OUTPUT_SIZE, 1, 1)
+            )
+            self.physics_sea_ice_bias = nn.Parameter(
+                torch.zeros(SURFACE_MODEL_OUTPUT_SIZE, 1, 1)
+            )
         self.physics_volume_embed = build_volume_conv_tower()
-        self.physics_corrector_orog = nn.Parameter(
-            torch.zeros(4094)
-        )
+        self.physics_corrector_orog = nn.Parameter(torch.zeros(_co))
 
         # ── Encoder 0 ────────────────────────────────────────────────
-        self.encoder_0_epd = build_epd_tower(
-            ENCODER_EPD_INPUT, ENCODER_EPD_OUTPUT,
-        )
+        self.encoder_0_epd = build_epd_tower(_ei, ENCODER_EPD_OUTPUT)
         self.encoder_0_positional = nn.Parameter(
-            torch.randn(POSITIONAL_LATENT_SIZE, 128, 64) * 0.01
+            torch.randn(_pl, _nl, _na) * 0.01
         )
-        self.encoder_0_orography = nn.Parameter(
-            torch.zeros(4223)
-        )
+        self.encoder_0_orography = nn.Parameter(torch.zeros(_eo))
 
         # ── Encoder 1 ────────────────────────────────────────────────
-        self.encoder_1_epd = build_epd_tower(
-            ENCODER_EPD_INPUT, ENCODER_EPD_OUTPUT,
-        )
+        self.encoder_1_epd = build_epd_tower(_ei, ENCODER_EPD_OUTPUT)
         self.encoder_1_positional = nn.Parameter(
-            torch.randn(POSITIONAL_LATENT_SIZE, 128, 64) * 0.01
+            torch.randn(_pl, _nl, _na) * 0.01
         )
-        self.encoder_1_orography = nn.Parameter(
-            torch.zeros(4223)
-        )
+        self.encoder_1_orography = nn.Parameter(torch.zeros(_eo))
 
         # ── Decoder ──────────────────────────────────────────────────
-        self.decoder_epd = build_epd_tower(
-            DECODER_EPD_INPUT, DECODER_EPD_OUTPUT,
-        )
+        self.decoder_epd = build_epd_tower(_di, DECODER_EPD_OUTPUT)
         self.decoder_positional = nn.Parameter(
-            torch.randn(POSITIONAL_LATENT_SIZE, 128, 64) * 0.01
+            torch.randn(_pl, _nl, _na) * 0.01
         )
+        if _do is not None:
+            # Some checkpoints (det 1.4°/0.7°) also store a decoder-side
+            # learned_orography; loaded here to remove the "unmapped" warning
+            # and stay bit-consistent with the JAX checkpoint.
+            self.decoder_orography = nn.Parameter(torch.zeros(_do))
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters())
@@ -601,6 +675,10 @@ def build_weight_mapping(jax_params: dict) -> dict[str, tuple[str, str]]:
             if "learned_positional_features/learned_positional_features" in sub:
                 mapping[jax_path] = ("decoder_positional", "positional")
                 continue
+            # Learned orography (present in det 1.4°/0.7° decoders)
+            if "learned_orography/orography" in sub:
+                mapping[jax_path] = ("decoder_orography", "orography")
+                continue
 
         # ── ENCODER ──────────────────────────────────────────────
         elif comp == "encoder":
@@ -654,6 +732,16 @@ def build_weight_mapping(jax_params: dict) -> dict[str, tuple[str, str]]:
 
             # Surface embeddings
             if "embedding_surface_features" in sub:
+                # Per-surface constant bias params (JAX bias-only mode used by
+                # deterministic 1.4°/0.7°): ``nodal_land_sea_ice_embedding/
+                # {land,sea_ice}_params`` — shape (output_size, 1, 1).
+                if sub.endswith("nodal_land_sea_ice_embedding/land_params"):
+                    mapping[jax_path] = ("physics_land_bias", "orography")
+                    continue
+                if sub.endswith("nodal_land_sea_ice_embedding/sea_ice_params"):
+                    mapping[jax_path] = ("physics_sea_ice_bias", "orography")
+                    continue
+
                 # Extract embedding index: modal_to_nodal_embedding (0),
                 #   modal_to_nodal_embedding_1 (1), modal_to_nodal_embedding_2 (2)
                 m = re.search(
@@ -762,13 +850,13 @@ def load_jax_checkpoint(checkpoint_path: str | Path) -> dict:
     return flat
 
 
-def build_jax_neural_components() -> JaxNeuralComponents:
+def build_jax_neural_components(resolution: str = "2.8") -> JaxNeuralComponents:
     """Build a JaxNeuralComponents module with correct architecture.
 
     Returns the module with random weights; call load_jax_weights() to
     populate from a JAX checkpoint.
     """
-    return JaxNeuralComponents()
+    return JaxNeuralComponents(resolution=resolution)
 
 
 def load_jax_weights(
@@ -885,6 +973,7 @@ def build_and_load_jax_model(
 def build_jax_aligned_experiment_model(
     checkpoint_path: str | Path | None = None,
     device: str = "cpu",
+    resolution: str = "2.8",
 ):
     """Build a full NeuralGCMModel with architecture matching the JAX checkpoint.
 
@@ -894,14 +983,38 @@ def build_jax_aligned_experiment_model(
 
     When checkpoint_path is provided, loads JAX weights into the model.
 
+    Args:
+        checkpoint_path: path to JAX .pkl checkpoint.
+        device: torch device string.
+        resolution: one of "2.8", "1.4", "0.7".
+
     Returns:
         (model, neural_components, coords, config, summary)
     """
+    # Auto-detect resolution from checkpoint filename to prevent mismatch.
+    # e.g. deterministic_2_8_deg.pkl → "2.8"
+    if checkpoint_path is not None:
+        _m = re.search(r'deterministic_(\d+)_(\d+)_deg', str(checkpoint_path))
+        if _m:
+            _ckpt_str = f"{int(_m.group(1))}.{int(_m.group(2))}"
+            _ckpt_res = {"2.8": "2.8", "1.4": "1.4", "0.7": "0.7"}.get(_ckpt_str)
+            if _ckpt_res is not None and _ckpt_res != resolution:
+                logger.warning(
+                    "Checkpoint resolution (%s) does not match requested "
+                    "resolution (%s). Using checkpoint resolution.",
+                    _ckpt_res, resolution,
+                )
+                resolution = _ckpt_res
+
     from tornado_gcm.scripts.data_preprocessing import build_coords_from_csv
     from tornado_gcm.core import coordinate_systems as core_coords
     from tornado_gcm.core import filtering
+    from tornado_gcm.core import primitive_equations as pe_mod
+    from tornado_gcm.core import spherical_harmonic
     from tornado_gcm.core import sigma_coordinates as sigma_mod
-    from tornado_gcm.neural.fixers import F64ConservationFixer
+    from tornado_gcm.neural.fixers import (
+        F64ConservationFixer, build_physical_ctx,
+    )
     from tornado_gcm.neural.parameterizations import JaxAlignedDivCurlParameterization
     from tornado_gcm.neural.features import (
         CombinedFeatures,
@@ -929,11 +1042,12 @@ def build_jax_aligned_experiment_model(
     from tornado_gcm.units import SimUnits
     import xarray as xr
 
-    # Build coordinates matching the JAX checkpoint grid (TL63 = 128x64 nodal,
-    # 64/65 spectral wavenumbers). The checkpoint dycore uses equidistant sigma
-    # layers, so we must not use the hybrid-CSV-derived sigma profile here.
+    # Build coordinates matching the JAX checkpoint grid.
+    # The checkpoint dycore uses equidistant sigma layers, so we must not
+    # use the hybrid-CSV-derived sigma profile here.
+    _spec = _JAX_RESOLUTION_SPECS[resolution]
     _coords_csv, _hybrid = build_coords_from_csv(
-        n_levels=N_SIGMA_LAYERS, resolution="TL63"
+        n_levels=N_SIGMA_LAYERS, resolution=_spec["grid_name"]
     )
     sigma = sigma_mod.SigmaCoordinates.equidistant(
         N_SIGMA_LAYERS, dtype=np.float64
@@ -957,9 +1071,33 @@ def build_jax_aligned_experiment_model(
     # ── Load auxiliary data from checkpoint (geopotential, land/sea mask) ──
     _aux_geopotential = None
     _aux_land_sea_mask = None
+    _reference_datetime_str = "1979-01-01T00"  # JAX default (model_builder.py)
+    _gin_cfg = ""
+    _reference_gin_cfg = ""
+    _reference_gin_path = (
+        Path(__file__).resolve().parents[2]
+        / "neuralgcm"
+        / "neuralgcm"
+        / "reference_code"
+        / "paper_configs"
+        / f"{_spec['gin_stem']}.gin"
+    )
+    if _reference_gin_path.exists():
+        _reference_gin_cfg = _reference_gin_path.read_text(encoding="utf-8")
     if checkpoint_path is not None:
         with open(checkpoint_path, "rb") as _f:
             _ckpt_aux = pickle.load(_f)
+        # Extract reference_datetime_str from gin config if explicitly set
+        _gin_cfg = _ckpt_aux.get("model_config_str", "")
+        import re as _re
+        _rdt_match = _re.search(
+            r"get_model_specs\.reference_datetime_str\s*=\s*'([^']+)'", _gin_cfg
+        )
+        if _rdt_match:
+            _reference_datetime_str = _rdt_match.group(1)
+            logger.info("Reference datetime from checkpoint gin config: %s", _reference_datetime_str)
+        else:
+            logger.info("Using default reference datetime: %s", _reference_datetime_str)
         _aux_dict = _ckpt_aux.get("aux_ds_dict")
         if _aux_dict is not None:
             try:
@@ -968,8 +1106,15 @@ def build_jax_aligned_experiment_model(
                     _aux_geopotential = torch.from_numpy(
                         _aux_ds["geopotential_at_surface"].values.copy()
                     ).float().unsqueeze(0)  # (1, lon, lat)
+                    # Checkpoint stores geopotential in SI units (m²/s²).
+                    # JAX internally uses nondimensional units (÷ vel_scale²).
+                    # vel_scale² = (radius * 2 * Omega)²
+                    _R = scales.RADIUS.magnitude       # m
+                    _Om = scales.OMEGA.magnitude       # rad/s
+                    _vel_sq = (_R * 2.0 * _Om) ** 2   # m²/s²
+                    _aux_geopotential = _aux_geopotential / _vel_sq
                     logger.info("Loaded geopotential_at_surface from checkpoint "
-                                "(range [%.1f, %.1f])",
+                                "(nondim range [%.4f, %.4f])",
                                 _aux_geopotential.min().item(),
                                 _aux_geopotential.max().item())
                 if "land_sea_mask" in _aux_ds:
@@ -981,7 +1126,7 @@ def build_jax_aligned_experiment_model(
                 logger.warning("Could not load aux data from checkpoint: %s", _e)
 
     # Build neural components
-    components = build_jax_neural_components()
+    components = build_jax_neural_components(resolution=resolution)
 
     # ── Build feature modules ────────────────────────────────────────
 
@@ -1011,7 +1156,7 @@ def build_jax_aligned_experiment_model(
         sigma_centers=coords.vertical.centers,
     )
 
-    radiation_module = RadiationFeatures(grid=grid)
+    radiation_module = RadiationFeatures(grid=grid, reference_datetime_str=_reference_datetime_str)
     latitude_module = LatitudeFeatures(grid=grid)
 
     # FloatDataFeatures(with_grads): geopotential_at_surface
@@ -1033,18 +1178,34 @@ def build_jax_aligned_experiment_model(
     )
 
     # EmbeddingSurfaceFeatures
-    surface_land_epd = ForwardTower(
-        neural_net=components.physics_surface_embeds[0],
-        feature_axis=-3,
-    )
-    surface_sea_epd = ForwardTower(
-        neural_net=components.physics_surface_embeds[1],
-        feature_axis=-3,
-    )
-    surface_ice_epd = ForwardTower(
-        neural_net=components.physics_surface_embeds[2],
-        feature_axis=-3,
-    )
+    # 2.8° has 3 surface embeds (land, sea, ice) via separate Epds [4,1,5].
+    # Det 1.4°/0.7° use "bias-only" mode: one Epd for sea (SST) + per-surface
+    # constant bias parameters (``land_params`` / ``sea_ice_params``, shape
+    # (8,1,1)) broadcast across the nodal grid — matches JAX
+    # ``NodalLandSeaIceEmbedding`` with land/sea_ice embeddings=None.
+    _n_surf = len(_spec["surface_embed_inputs"])
+    _land_ice_biases = bool(_spec.get("land_ice_biases", False))
+    _surface_land_bias = None
+    _surface_sea_ice_bias = None
+    if _n_surf >= 3:
+        surface_land_epd = ForwardTower(
+            neural_net=components.physics_surface_embeds[0], feature_axis=-3)
+        surface_sea_epd = ForwardTower(
+            neural_net=components.physics_surface_embeds[1], feature_axis=-3)
+        surface_ice_epd = ForwardTower(
+            neural_net=components.physics_surface_embeds[2], feature_axis=-3)
+    elif _land_ice_biases:
+        # Single sea-only Epd; land + sea_ice use constant bias params.
+        surface_sea_epd = ForwardTower(
+            neural_net=components.physics_surface_embeds[0], feature_axis=-3)
+        surface_land_epd = None
+        surface_ice_epd = None
+        _surface_land_bias = components.physics_land_bias
+        _surface_sea_ice_bias = components.physics_sea_ice_bias
+    else:
+        _shared = ForwardTower(
+            neural_net=components.physics_surface_embeds[0], feature_axis=-3)
+        surface_land_epd = surface_sea_epd = surface_ice_epd = _shared
     # Use shared normalization scales/shifts
     norm_pair = (_ADVANCE_SCALES, _ADVANCE_SHIFTS)
     surface_embedding = EmbeddingSurfaceFeatures(
@@ -1056,6 +1217,8 @@ def build_jax_aligned_experiment_model(
         land_norm=norm_pair,
         sea_norm=norm_pair,
         sea_ice_norm=norm_pair,
+        land_bias=_surface_land_bias,
+        sea_ice_bias=_surface_sea_ice_bias,
     )
 
     # EmbeddingVolumeFeatures
@@ -1138,7 +1301,19 @@ def build_jax_aligned_experiment_model(
         filter_fn=None,
     )
 
-    fixer = F64ConservationFixer()
+    # The fixers conserve a *physical* quantity when given the integral's
+    # context.  The surface-geopotential term is intentionally omitted here:
+    # its nondimensional convention (checkpoint stores SI geopotential divided
+    # by vel_scale^2) has not been reconciled with the energy integral's
+    # convention, and a wrong constant term would bias every correction.
+    # Recorded as ISSUE-008 in revision/plan/00_issues.md.
+    _phys_ctx = build_physical_ctx(
+        coords=coords,
+        physics_specs=physics_specs,
+        reference_temperature=REFERENCE_TEMPERATURES,
+        orography=None,
+    )
+    fixer = F64ConservationFixer(physical_ctx=_phys_ctx)
     policy = PrecisionPolicy()
 
     # Nondimensional dt from JAX checkpoint (Gin config):
@@ -1147,24 +1322,262 @@ def build_jax_aligned_experiment_model(
     _JAX_DT_NONDIM = 0.525024
 
     # Orography in modal space: nondimensionalize geopotential (m²/s²)
-    # using physics_specs and convert to modal coefficients for the dycore.
-    # Nondim factor: g_nondim / g_si ≈ 72.364 / 9.80665 ≈ 7.379
-    # i.e. geopotential_nondim = geopotential_si * (1/(radius_si * angular_velocity_si)^2)
-    # Simpler: use SimUnits.nondimensionalize directly.
+    # Aux geopotential is already converted to nondimensional units above.
+    #
+    # JAX FilteredCustomOrography chain:
+    #   1. Load nodal orography from dataset
+    #   2. Spectral interpolate from dataset native coords → target coords
+    #   3. Apply orography/DataExponentialFilter (modal-space filter)
+    #
+    # PT equivalent: grid.to_modal() (steps 1+2, same-grid shortcut).
+    # The orography/DataExponentialFilter is applied below in the gin-parsing
+    # section if its attenuation > 0 (for deterministic_2_8_deg it is 0.0).
     orography_modal = None
     if _aux_geopotential is not None:
-        _geopot_nodal = _aux_geopotential.squeeze(0)  # (lon, lat)
-        # Nondimensionalize: divide by (radius_si * Omega_si)^2
-        # scale: [length]=6371220m, [time]=6856.83s → velocity_scale = L/T
-        # geopotential has units m²/s² = velocity² → divide by velocity_scale²
-        _L = 6371220.0  # radius [m]
-        _T = 6856.829402084476  # time scale [s]
-        _vel_sq = (_L / _T) ** 2
-        _geopot_nondim = _geopot_nodal / _vel_sq
-        orography_modal = grid.to_modal(_geopot_nondim.float())
-        logger.info("Orography modal shape: %s, range [%.4f, %.4f]",
+        _geopot_nodal = _aux_geopotential.squeeze(0)  # already nondim, (lon, lat)
+        orography_modal = grid.to_modal(_geopot_nodal.float())
+        logger.info("Orography modal shape: %s, range [%.4f, %.4f], l2=%.6e",
                      orography_modal.shape, orography_modal.min().item(),
-                     orography_modal.max().item())
+                     orography_modal.max().item(),
+                     orography_modal.norm(p=2).item())
+
+    corrector_coords = None
+    corrector_orography = None
+    if _gin_cfg or _reference_gin_cfg:
+        def _extract_gin_value(key: str, default: Any = None) -> Any:
+            for gin_text in (_gin_cfg, _reference_gin_cfg):
+                if not gin_text:
+                    continue
+                match = re.search(rf"^{re.escape(key)}\s*=\s*(.+)$", gin_text, re.MULTILINE)
+                if not match:
+                    continue
+                raw = match.group(1).strip()
+                # Resolve gin macro references (%MACRO_NAME) recursively
+                # Macros are defined as "MACRO_NAME = value" in the same gin text.
+                _max_macro_depth = 10
+                for _ in range(_max_macro_depth):
+                    m = re.match(r'^%(\w+(?:/\w+)*)$', raw)
+                    if not m:
+                        break
+                    macro_name = m.group(1)
+                    macro_match = re.search(
+                        rf"^{re.escape(macro_name)}\s*=\s*(.+)$",
+                        gin_text, re.MULTILINE,
+                    )
+                    if macro_match:
+                        raw = macro_match.group(1).strip()
+                    else:
+                        logger.warning("Unresolved gin macro: %s", raw)
+                        break
+                if raw == "None":
+                    return None
+                if (raw.startswith("'") and raw.endswith("'")) or (
+                    raw.startswith('"') and raw.endswith('"')
+                ):
+                    return raw[1:-1]
+                try:
+                    if any(ch in raw for ch in (".", "e", "E")):
+                        return float(raw)
+                    return int(raw)
+                except ValueError:
+                    return raw
+            return default
+
+        # ── Extract orography correction & filter settings from gin ─────
+        # JAX: LearnedOrography(base=FilteredCustomOrography, correction_scale)
+        #      FilteredCustomOrography applies orography/DataExponentialFilter
+        correction_scale = _extract_gin_value(
+            "LearnedOrography.correction_scale", 1e-05
+        )
+        data_filter_atten = _extract_gin_value(
+            "orography/DataExponentialFilter.attenuation", 0.0
+        )
+        data_filter_order = int(_extract_gin_value(
+            "orography/DataExponentialFilter.order", 1
+        ))
+        data_filter_cutoff = float(_extract_gin_value(
+            "orography/DataExponentialFilter.cutoff", 0.0
+        ))
+        logger.info(
+            "Gin orography: correction_scale=%.2e, "
+            "data_filter(atten=%.4f, order=%d, cutoff=%.2f)",
+            correction_scale, data_filter_atten, data_filter_order, data_filter_cutoff,
+        )
+        print(
+            f"[oro-loader] correction_scale={correction_scale:.2e}, "
+            f"data_filter_atten={data_filter_atten}, "
+            f"data_filter_order={data_filter_order}, "
+            f"data_filter_cutoff={data_filter_cutoff}"
+        )
+
+        # ── Prepare orography data filter (JAX orography/DataExponentialFilter) ──
+        # JAX applies this filter AFTER spectral interpolation to the target
+        # coords (corrector grid). We build the filter fn here and apply it
+        # to corrector_orography below (after interpolation).
+        # For deterministic_2_8_deg, DATA_FILTER_ATTENUATION = 0.0 → identity.
+        _oro_filter_fn = None
+        if data_filter_atten > 0:
+            _oro_filter_fn = filtering.exponential_filter(
+                grid,
+                attenuation=data_filter_atten,
+                order=data_filter_order,
+                cutoff=data_filter_cutoff,
+            )
+            logger.info(
+                "Orography DataExponentialFilter ready: atten=%.4f, order=%d, "
+                "cutoff=%.2f (will apply on corrector grid after interpolation)",
+                data_filter_atten, data_filter_order, data_filter_cutoff,
+            )
+        elif orography_modal is not None:
+            logger.info(
+                "Orography DataExponentialFilter skipped (atten=%.4f ≤ 0)",
+                data_filter_atten,
+            )
+
+        custom_lw = _extract_gin_value(
+            "smaller/GridWithWavenumbers.longitude_wavenumbers"
+        )
+        # Skip corrector grid when it's within 1 wavenumber of the main grid —
+        # the dealiasing margin is negligible and the mismatch causes shape errors
+        # (e.g. state at 127×65 vs corrector at 125×64) for scripts that call
+        # dycore methods directly without spectral-interpolation.
+        if (custom_lw is not None
+                and abs(int(custom_lw) - coords.horizontal.longitude_wavenumbers) > 1):
+            custom_dealias = str(_extract_gin_value(
+                "smaller/GridWithWavenumbers.dealiasing", "quadratic"
+            ))
+            custom_lat_spacing = str(_extract_gin_value(
+                "smaller/GridWithWavenumbers.latitude_spacing", "gauss"
+            ))
+            custom_lon_offset = float(_extract_gin_value(
+                "smaller/GridWithWavenumbers.longitude_offset", 0.0
+            ))
+            custom_radius = _extract_gin_value(
+                "smaller/GridWithWavenumbers.radius", None
+            )
+            corrector_grid = spherical_harmonic.Grid.with_wavenumbers(
+                longitude_wavenumbers=int(custom_lw),
+                dealiasing=custom_dealias,
+                latitude_spacing=custom_lat_spacing,
+                longitude_offset=custom_lon_offset,
+                radius=float(1.0 if custom_radius is None else custom_radius),
+            )
+            corrector_coords = core_coords.CoordinateSystem(
+                horizontal=corrector_grid,
+                vertical=coords.vertical,
+            )
+
+            if orography_modal is not None:
+                corrector_orography = core_coords.get_spectral_interpolate_fn(
+                    coords, corrector_coords,
+                )(orography_modal)
+            else:
+                corrector_orography = torch.zeros(
+                    corrector_coords.modal_shape[1:], dtype=torch.float32,
+                )
+
+            # ── Apply orography data filter on corrector grid ──────────
+            # JAX FilteredCustomOrography applies DataExponentialFilter
+            # AFTER spectral interpolation to the target coords.
+            # This matches: filtered_modal_orography(..., coords=corrector_coords).
+            if corrector_orography is not None and _oro_filter_fn is not None:
+                _oro_l2_before = corrector_orography.norm(p=2).item()
+                corrector_orography = _oro_filter_fn(corrector_orography)
+                _oro_l2_after = corrector_orography.norm(p=2).item()
+                logger.info(
+                    "Corrector orography after DataExponentialFilter: "
+                    "l2=%.6e (was %.6e, Δ=%.2e)",
+                    _oro_l2_after, _oro_l2_before,
+                    _oro_l2_before - _oro_l2_after,
+                )
+
+            if checkpoint_path is not None:
+                flat_params = load_jax_checkpoint(checkpoint_path)
+                param_arrays = {
+                    k: v for k, v in flat_params.items()
+                    if k.startswith("params/") and isinstance(v, np.ndarray)
+                }
+                mapping = build_weight_mapping(param_arrays)
+                correction_vec = None
+                for jax_path, (pt_key, param_type) in mapping.items():
+                    if pt_key == "physics_corrector_orog":
+                        correction_vec = _convert_param(
+                            param_arrays[jax_path], param_type,
+                        ).float()
+                        break
+                if correction_vec is not None:
+                    # ── Apply learned orography correction ──────────────
+                    # JAX: nodal_orography_from_ds converts geopotential→height
+                    # (÷g_SI), then nondimensionalizes. LearnedOrography adds
+                    # correction*scale in HEIGHT space.
+                    #
+                    # PT: corrector_orography is in nondim GEOPOTENTIAL (Φ/vel²).
+                    # The Showstopper B fix (÷_g_nondim) converts to height space
+                    # but runs AFTER this block. So we must scale the correction
+                    # by _g_nondim so it lands in the right units after division.
+                    #
+                    # Without scaling: correction_contribution = corr*scale / g
+                    #                   ≈ 1.125e-4 / 72.36 ≈ 1.56e-6 (72× too small)
+                    _g_nondim = float(physics_specs.g)
+                    _corr_stats = {
+                        'min': correction_vec.min().item(),
+                        'max': correction_vec.max().item(),
+                        'mean': correction_vec.mean().item(),
+                        'std': correction_vec.std().item(),
+                        'l2': correction_vec.norm(p=2).item(),
+                    }
+                    logger.info(
+                        "Loaded corrector correction: shape=%s, "
+                        "min=%.6e, max=%.6e, mean=%.6e, std=%.6e, l2=%.6e",
+                        tuple(correction_vec.shape),
+                        _corr_stats['min'], _corr_stats['max'],
+                        _corr_stats['mean'], _corr_stats['std'],
+                        _corr_stats['l2'],
+                    )
+                    print(
+                        f"[oro-loader] correction_vec: shape={tuple(correction_vec.shape)}, "
+                        f"min={_corr_stats['min']:.4e}, max={_corr_stats['max']:.4e}, "
+                        f"mean={_corr_stats['mean']:.4e}, std={_corr_stats['std']:.4e}, "
+                        f"l2={_corr_stats['l2']:.4e}"
+                    )
+
+                    correction_modal = torch.zeros_like(corrector_orography)
+                    correction_modal[torch.as_tensor(
+                        corrector_grid.mask, dtype=torch.bool,
+                    )] = correction_vec.to(
+                        dtype=correction_modal.dtype,
+                        device=correction_modal.device,
+                    )
+                    _oro_l2_before_corr = corrector_orography.norm(p=2).item()
+                    _corr_contrib_raw = (correction_modal * correction_scale).norm(p=2).item()
+                    _corr_contrib_scaled = (correction_modal * correction_scale * _g_nondim).norm(p=2).item()
+                    corrector_orography = (
+                        corrector_orography
+                        + correction_modal * correction_scale * _g_nondim
+                    )
+                    _oro_l2_after_corr = corrector_orography.norm(p=2).item()
+                    logger.info(
+                        "Corrector orography: l2=%.6e (base=%.6e, "
+                        "correction*%.2e*g=%.6e, Δ=%.2e, shape=%s, "
+                        "range [%.6e, %.6e])",
+                        _oro_l2_after_corr, _oro_l2_before_corr,
+                        correction_scale, _corr_contrib_scaled,
+                        _oro_l2_before_corr - _oro_l2_after_corr,
+                        tuple(corrector_orography.shape),
+                        corrector_orography.min().item(),
+                        corrector_orography.max().item(),
+                    )
+                    print(
+                        f"[oro-loader] corrector_orography final: "
+                        f"l2={_oro_l2_after_corr:.6e} (base={_oro_l2_before_corr:.6e}, "
+                        f"correction*{correction_scale:.2e}*g={_corr_contrib_scaled:.6e}, "
+                        f"raw_correction_l2={_corr_contrib_raw:.6e}, "
+                        f"g_nondim={_g_nondim:.4f}, "
+                        f"delta={_oro_l2_before_corr - _oro_l2_after_corr:.6e})"
+                    )
+                else:
+                    print("[oro-loader] WARNING: correction_vec is None — "
+                          "learned orography correction NOT applied!")
 
     # ── Compute filter attenuations matching JAX gin config ─────────
     # deterministic_2_8_deg.gin: NUM_SUBSTEPS=1 → corrector ctor `dt` equals
@@ -1199,13 +1612,33 @@ def build_jax_aligned_experiment_model(
         cutoff=0.4,
     )
 
+    # ── Orography unit correction (Showstopper B fix) ───────────────
+    # ``orography_modal`` / ``corrector_orography`` above hold nondimensional
+    # surface GEOPOTENTIAL (Φ/vel²). The dynamical core
+    # (PrimitiveEquationsSigma) treats ``orography`` as a HEIGHT-like field and
+    # reconstructs surface geopotential as ``orography * g`` (and the orography
+    # tendency as ``-g·∇²(orography)``) with ``g = physics_specs.g`` (nondim
+    # ≈ 72.36). Passing nondim geopotential directly therefore over-scales the
+    # orographic forcing by g_nondim and blows up the dycore in one outer step
+    # (validated: dividing the dycore orography by g_nondim restores stability).
+    # Divide here so the dycore's ``* g`` recovers the correct Φ/vel².
+    _g_nondim = float(physics_specs.g)
+    if orography_modal is not None:
+        orography_modal = orography_modal / _g_nondim
+    if corrector_orography is not None:
+        corrector_orography = corrector_orography / _g_nondim
+    logger.info("Orography rescaled by 1/g_nondim (g=%.4f) for dycore consistency",
+                 _g_nondim)
+
     model_cfg = ModelConfig(
         coords=coords,
+        corrector_coords=corrector_coords,
         dt=_JAX_DT_NONDIM,
         dycore_substeps=_DYCORE_SUBSTEPS,
         physics_specs=physics_specs,
         reference_temperature=REFERENCE_TEMPERATURES,
         orography=orography_modal,
+        corrector_orography=corrector_orography,
         cloud_keys=(
             "specific_cloud_liquid_water_content",
             "specific_cloud_ice_water_content",
@@ -1229,13 +1662,36 @@ def build_jax_aligned_experiment_model(
         logger.info("Loaded JAX weights: %s", summary)
 
     model = model.to(device)
+    # Move pre-converted static tensors to GPU so hot-path .to(device=…)
+    # calls are no-ops, eliminating CUDA-graph DeviceCopy partitions.
+    coords.horizontal.to(device)
+    if hasattr(coords.vertical, "to"):
+        coords.vertical.to(device)
+    # coords may be a different instance than model._dycore_pe.coords.
+    # Migrate the high-precision Grid here too so that the returned
+    # coords object is fully device-consistent.
+    if hasattr(coords, "_horizontal_einsum_highest") and hasattr(
+        coords._horizontal_einsum_highest, "to"
+    ):
+        coords._horizontal_einsum_highest.to(device)
 
+    # Build resolution-aware config dict with training-essential keys.
+    # dt_hours and peak_lr come from PAPER_RESOLUTIONS in exp_utils.
+    _res_dt = {"2.8": 1.0, "1.4": 0.5, "0.7": 0.25}.get(resolution, 1.0)
+    _res_peak_lr = {"2.8": 0.002, "1.4": 0.002, "0.7": 0.001}.get(resolution, 0.002)
+    _res_total_steps = {"2.8": 38000, "1.4": 26000, "0.7": 25000}.get(resolution, 38000)
     config = {
-        "resolution": "2.8",
+        "resolution": resolution,
         "n_levels": N_SIGMA_LAYERS,
-        "dt_hours": 1.0,
-        "grid": "TL63",
+        "dt_hours": _res_dt,
+        "grid": _spec["grid_name"],
+        "grid_lon": _spec["nodal_lon"],
+        "grid_lat": _spec["nodal_lat"],
+        "max_wavenumber": _spec["max_wavenumber"],
         "latent_size": LATENT_SIZE,
         "num_blocks": NUM_BLOCKS,
+        "peak_lr": _res_peak_lr,
+        "total_steps": _res_total_steps,
+        "hidden_size": 64,  # used by training scripts
     }
     return model, components, coords, config, summary

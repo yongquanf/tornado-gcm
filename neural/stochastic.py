@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Stochastic physics parameterization — PyTorch implementation.
 
@@ -110,7 +110,7 @@ class GaussianRandomField(nn.Module):
         L = self.grid.total_wavenumbers
         M = self.grid.total_wavenumbers  # for triangular truncation
         shape = (M, L)
-        sigma = self._sigma_n.to(device=device, dtype=dtype)
+        sigma = self._sigma_n.to(dtype=dtype)
 
         # Scale for stationary variance: factor = 1 / sqrt(1 - phi^2)
         if abs(self._phi) < 1.0:
@@ -139,7 +139,7 @@ class GaussianRandomField(nn.Module):
         """Advance AR(1) one time step."""
         device = state.core.device
         dtype = state.core.dtype
-        sigma = self._sigma_n.to(device=device, dtype=dtype)
+        sigma = self._sigma_n.to(dtype=dtype)
 
         eta = torch.randn_like(state.core, generator=generator)
         eta = torch.clamp(eta, -self.clip, self.clip)

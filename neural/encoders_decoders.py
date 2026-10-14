@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Encoder/Decoder modules — PyTorch implementation.
 
@@ -59,6 +59,8 @@ class WeatherbenchToPrimitiveEncoder(nn.Module):
         self.coords = coords
         self.physics_specs = physics_specs
         self.ref_temps = reference_temperatures
+        self._ref_temps_t = torch.from_numpy(
+            np.asarray(reference_temperatures, dtype=np.float64).copy()).to(torch.float64)
         self.input_pressure = vi.PressureCoordinates(input_pressure_levels)
         if orography is not None:
             self.register_buffer("_orography", orography, persistent=False)
@@ -90,7 +92,7 @@ class WeatherbenchToPrimitiveEncoder(nn.Module):
         if "geopotential_at_surface" in wb_dict:
             geo_surface = wb_dict["geopotential_at_surface"]
         elif self._orography is not None:
-            geo_surface = self._orography.to(device=device, dtype=dtype) * g
+            geo_surface = self._orography.to(dtype=dtype) * g
         else:
             # Use lowest pressure level as estimate
             geo_surface = geo[-1:] * 0
@@ -120,8 +122,8 @@ class WeatherbenchToPrimitiveEncoder(nn.Module):
         )
 
         # 4. Linearize temperature
-        ref_t = torch.tensor(
-            self.ref_temps, dtype=dtype, device=device,
+        ref_t = self._ref_temps_t.to(
+            device=device, dtype=dtype,
         ).reshape(-1, 1, 1)
         t_var = sigma_fields["t"] - ref_t
         t_var_modal = grid.to_modal(t_var)
@@ -294,20 +296,20 @@ class PrimitiveToWeatherbenchDecoder(nn.Module):
         cos_uv = spherical_harmonic.get_cos_lat_vector(
             state.vorticity, state.divergence, grid, clip=False,
         )
-        sec2 = torch.tensor(grid.sec2_lat, dtype=dtype, device=device)
+        sec2 = grid._buf._sec2_lat_torch.to(device=cos_uv[0].device, dtype=dtype)
         u = grid.to_nodal(cos_uv[0]) * sec2
         v = grid.to_nodal(cos_uv[1]) * sec2
 
         # 2. Absolute temperature
-        ref_t = torch.tensor(
-            self.ref_temps, dtype=dtype, device=device,
+        ref_t = self._ref_temps_t.to(
+            device=device, dtype=dtype,
         ).reshape(-1, 1, 1)
         t_nodal = grid.to_nodal(state.temperature_variation) + ref_t
 
         # 3. Geopotential (simplified: Φ = Φ_s + R*T_virt * ln(P_s/P))
         sp = torch.exp(grid.to_nodal(state.log_surface_pressure))
         if self._orography is not None:
-            geo_surface = self._orography.to(device=device, dtype=dtype) * g
+            geo_surface = self._orography.to(dtype=dtype) * g
         else:
             geo_surface = torch.zeros(1, *sp.shape[-2:], dtype=dtype, device=device)
 

@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Vertical interpolation between sigma and pressure levels — PyTorch.
 
@@ -149,7 +149,7 @@ def interp_pressure_to_sigma(
         n_pressure = x.shape[-3]
         n_sigma = len(sigma_c)
 
-        x_flat = x.reshape(-1, n_pressure)  # (n_cols, n_pressure)
+        x_flat = x.reshape(n_pressure, -1).T  # (n_cols, n_pressure)
         target_flat = target.reshape(n_sigma, -1).T  # (n_cols, n_sigma)
 
         # Batch interpolation: for each column, interp from source→target

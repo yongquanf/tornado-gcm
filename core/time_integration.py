@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Implicit–explicit time integration routines — PyTorch implementation.
 
@@ -62,7 +62,7 @@ def _tree_add(a, b):
 
 
 def _tree_scale(tree, c: float):
-    return _tree_map(lambda x: x * c, tree)
+    return _tree_map(lambda x: torch.mul(x, c), tree)
 
 
 def _tree_neg(tree):
@@ -285,11 +285,11 @@ def imex_runge_kutta(
         g[0] = equation.implicit_terms(y0)
 
         for i in range(1, n):
-            ex = _tree_scale(y0, 0)  # zero
+            ex = _tree_scale(y0, 0.0)  # zero
             for j in range(i):
                 if a_ex[i-1][j]:
                     ex = _tree_add(ex, _tree_scale(f[j], dt * a_ex[i-1][j]))
-            im = _tree_scale(y0, 0)
+            im = _tree_scale(y0, 0.0)
             for j in range(i):
                 if a_im[i-1][j]:
                     im = _tree_add(im, _tree_scale(g[j], dt * a_im[i-1][j]))

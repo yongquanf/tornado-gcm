@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """NeuralGCM model API — PyTorch implementation.
 
@@ -25,7 +25,6 @@ import dataclasses
 import logging
 from typing import Any, Callable, Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.utils.checkpoint as torch_checkpoint
@@ -91,6 +90,8 @@ class ModelConfig:
 
     Attributes:
         coords: coordinate system (horizontal + vertical).
+        corrector_coords: optional custom coordinate system used by the
+            JAX `CustomCoordsCorrector` inner dycore loop.
         dt: time step size (nondimensional) for the *outer* physics step.
         inner_steps: number of outer steps saved per ``forward()`` call.
         dycore_substeps: number of dynamics inner steps per outer physics
@@ -100,6 +101,7 @@ class ModelConfig:
         reference_temperature: T_ref profile (n_levels,).  Required when
             ``physics_specs`` is given.
         orography: modal orography tensor.  If ``None``, a zero field is used.
+        corrector_orography: modal orography tensor for ``corrector_coords``.
         precision_policy: PZHA precision configuration.
         filter_attenuation: exponential filter attenuation.
         filter_order: exponential filter order.
@@ -111,12 +113,14 @@ class ModelConfig:
     """
 
     coords: coordinate_systems.CoordinateSystem
+    corrector_coords: Optional[coordinate_systems.CoordinateSystem] = None
     dt: float = 1.0
     inner_steps: int = 1
     dycore_substeps: int = 8
     physics_specs: Any = None
-    reference_temperature: Optional[np.ndarray] = None
+    reference_temperature: Optional[torch.Tensor] = None
     orography: Optional[torch.Tensor] = None
+    corrector_orography: Optional[torch.Tensor] = None
     precision_policy: PrecisionPolicy = dataclasses.field(
         default_factory=PrecisionPolicy
     )
@@ -175,6 +179,12 @@ class NeuralGCMModel(nn.Module):
         diagnostics_fn: Callable | None = None,
     ):
         super().__init__()
+        # Raise Dynamo recompile limit and treat integer nn.Module attrs as
+        # dynamic.  _step_count increments every step; without this flag Dynamo
+        # specialises on each unique int value and recompiles 64 times before
+        # hitting the limit, making compile 98× slower than eager.
+        torch._dynamo.config.recompile_limit = 64
+        torch._dynamo.config.allow_unspec_int_on_nn_module = True
         self.config = config
         self.parameterization = parameterization
         self.conservation_fixer = conservation_fixer
@@ -190,6 +200,23 @@ class NeuralGCMModel(nn.Module):
         self.perturbation_fn = perturbation_fn
         self.random_field = random_field
         self.diagnostics_fn = diagnostics_fn
+
+        # Integration coords = main grid always.  The corrector grid (if any)
+        # is ONLY for orography anti-aliasing — JAX runs its dycore on the
+        # full grid and only uses the smaller grid for orography pre-processing.
+        self._integration_coords = config.coords
+        # _to_integration_coords / _from_integration_coords stay None:
+        # state and physics tendency remain on the main grid without truncation.
+        self._to_integration_coords = None
+        self._from_integration_coords = None
+        # Build a one-way interpolation from corrector grid → main grid
+        # for orography correction (JAX: corrector_orography computed on
+        # smaller grid then interpolated to main dycore grid).
+        self._orography_interpolate = None
+        if config.corrector_coords is not None:
+            self._orography_interpolate = coordinate_systems.get_spectral_interpolate_fn(
+                config.corrector_coords, config.coords,
+            )
 
         # Build spectral filters (dycore + optional stability)
         grid = config.coords.horizontal
@@ -207,6 +234,35 @@ class NeuralGCMModel(nn.Module):
                 order=config.stability_filter_order,
                 cutoff=config.stability_filter_cutoff,
             )
+
+        inner_grid = self._integration_coords.horizontal
+        self._inner_exp_filter = filtering.exponential_filter(
+            inner_grid,
+            attenuation=config.filter_attenuation,
+            order=config.filter_order,
+            cutoff=config.filter_cutoff,
+        )
+        self._inner_stability_filter: Callable | None = None
+        if config.stability_filter_attenuation is not None:
+            self._inner_stability_filter = filtering.exponential_filter(
+                inner_grid,
+                attenuation=config.stability_filter_attenuation,
+                order=config.stability_filter_order,
+                cutoff=config.stability_filter_cutoff,
+            )
+        # Pre-combine dycore + stability scalings into one filter to halve
+        # the number of per-inner-step filter tree traversals (16 → 8 per
+        # outer step).
+        if self._inner_stability_filter is not None:
+            combined_scaling = (
+                self._inner_exp_filter.scaling
+                * self._inner_stability_filter.scaling
+            )
+            self._inner_combined_filter = filtering.CombinedExponentialFilter(
+                combined_scaling,
+            )
+        else:
+            self._inner_combined_filter = self._inner_exp_filter
         self.policy = config.precision_policy
 
         # ── Nanoscope integration ────────────────────────────────────
@@ -224,22 +280,34 @@ class NeuralGCMModel(nn.Module):
         if config.use_dycore and config.physics_specs is not None:
             ref_temp = config.reference_temperature
             if ref_temp is None:
-                ref_temp = np.full(config.coords.vertical.layers, 250.0)
+                ref_temp = torch.full((config.coords.vertical.layers,), 250.0)
 
-            orography = config.orography
+            dycore_coords = self._integration_coords
+            # Orography: if corrector_orography exists on the smaller grid,
+            # interpolate it to the main dycore grid (matching JAX behaviour
+            # where the anti-aliased orography is computed on a coarser grid
+            # and then interpolated back).
+            if config.corrector_orography is not None and self._orography_interpolate is not None:
+                orography = self._orography_interpolate(config.corrector_orography)
+            elif config.orography is not None:
+                orography = config.orography
+            else:
+                orography = None
             if orography is None:
-                modal_shape = config.coords.modal_shape
+                modal_shape = dycore_coords.modal_shape
                 orography = torch.zeros(modal_shape[1:], dtype=torch.float32)
 
             dycore = primitive_equations.PrimitiveEquationsSigma(
                 reference_temperature=ref_temp,
                 orography=orography,
-                coords=config.coords,
+                coords=dycore_coords,
                 physics_specs=config.physics_specs,
                 humidity_key=config.humidity_key,
                 cloud_keys=config.cloud_keys,
             )
+            self._dycore_pe = dycore
             self._dycore_equation = dycore.as_imex_ode()
+            dycore._policy = self.policy  # enable subzone_context in dycore
 
             # Build inner step function (IMEX-RK3-SIL3 + filter)
             inner_dt = config.dt / config.dycore_substeps
@@ -250,6 +318,163 @@ class NeuralGCMModel(nn.Module):
             # We cache inner_dt; the actual step_fn is rebuilt per outer step
             # because physics tendencies change each outer step.
             self._inner_dt = inner_dt
+            # Pre-populate linalg.inv cache for all SIL3 eta values.
+            # torch.linalg.inv is not CUDA-graph-capturable, so we compute
+            # and cache all inverses eagerly before any step runs.
+            dycore._precompute_implicit_inverses(inner_dt)
+
+        # Per-module precision dispatch (D1): consume policy._module_dtype_map
+        # so DAG-discovered per-leaf dtypes are enforced at runtime.  No-op when
+        # the policy carries no map (default build).
+        self.install_precision_hooks()
+
+    def install_precision_hooks(self):
+        """(Re)install per-module precision dispatch from
+        ``self.policy._module_dtype_map``.
+
+        Removes any previously installed hooks first; no-op without a map.
+        Call again after attaching a DAG-discovered policy.  Returns the handles.
+        """
+        from tornado_gcm.precision.zone_cast import install_module_precision_hooks
+        for h in getattr(self, "_precision_hook_handles", []):
+            h.remove()
+        self._precision_hook_handles = install_module_precision_hooks(
+            self, self.policy)
+        return self._precision_hook_handles
+
+    def bake_precision(self):
+        """Inference-mode (U1): bake the policy's dtypes ONCE into per-leaf
+        module params + the dycore SHT override, eliminating the per-forward
+        autocast / per-call override overhead.
+
+        Per-leaf baking: each leaf module whose path matches a key in
+        ``policy._module_dtype_map`` is cast to its assigned dtype.
+        Removes any installed precision hooks.  Returns the mapping
+        applied (or {} if no map).
+        """
+        for h in getattr(self, "_precision_hook_handles", []):
+            h.remove()
+        self._precision_hook_handles = []
+        mdm = getattr(self.policy, "_module_dtype_map", None) or {}
+        baked = {}
+        for key, dtype in mdm.items():
+            if not key.startswith("leaf:"):
+                continue
+            mod_path = key[len("leaf:"):]
+            try:
+                mod = self.get_submodule(mod_path)
+                mod.to(dtype)
+                baked[mod_path] = dtype
+            except AttributeError:
+                pass
+        # Zone-level Z3 declaration: without this, _apply_parameterization
+        # follows the weight dtype and Z3 silently executes in FP32.
+        if not baked and self.parameterization is not None:
+            z3 = getattr(self.policy, "z3_compute_dtype", None)
+            if z3 is not None:
+                self.parameterization.to(z3)
+                baked["parameterization"] = z3
+        # Dycore SHT override
+        dyc = getattr(self, "_dycore_pe", None)
+        if dyc is not None:
+            szd = getattr(self.policy, "_subzone_dtype", {}) or {}
+            z1 = szd.get("Z1_SHT") or szd.get("Z1_DYNAMICS")
+            if z1 is not None:
+                sht = dyc.coords.horizontal.spherical_harmonics
+                object.__setattr__(sht, "_subzone_dtype_override", z1)
+                dyc._baked_override = True
+
+            # SHT einsum precision: honor the policy instead of the hard-coded
+            # default (get_sht_einsum's threshold=42 => FP64 for L>42).  Without
+            # this, a policy declaring Z1=FP32/TF32 still runs every transform
+            # matmul in FP64 -- the largest single component of step time.
+            from tornado_gcm.core.spherical_harmonic import (
+                get_sht_einsum, einsum_adaptive,
+            )
+            from tornado_gcm.precision.zone_cast import einsum_highest
+
+            thr = getattr(self.policy, "sht_adaptive_threshold", None)
+            sht_dt = getattr(self.policy, "z1_sht_dtype", None)
+            L = int(dyc.coords.horizontal.total_wavenumbers)
+            fn = None
+            if sht_dt is not None:
+                fn = einsum_highest if sht_dt == torch.float64 else einsum_adaptive
+            elif thr is not None:
+                fn = get_sht_einsum(L, threshold=int(thr))
+            if fn is not None:
+                try:
+                    coords = dyc.coords
+                    new_grid = coords.horizontal.with_einsum(fn)
+                    coords.horizontal = new_grid
+                    if getattr(coords, "_horizontal_einsum_highest", None) is not None:
+                        # Diagnostics stay high-precision by design.
+                        coords._horizontal_einsum_highest = new_grid.with_einsum(
+                            einsum_highest)
+                    self._sht_einsum_kind = getattr(fn, "__name__", repr(fn))
+                except Exception as exc:  # pragma: no cover - defensive
+                    self._sht_einsum_kind = "error: %r" % (exc,)
+        return baked
+
+    def audit_declared_vs_executed(self, state=None, steps: int = 1,
+                                   measure_overhead: bool = False):
+        """INV-5: verify that each zone executes at the dtype the policy declares.
+
+        Returns a :class:`tornado_gcm.precision.inv5.AuditReport` with the
+        per-zone/dtype GFLOP table and the list of mismatches.  Requires a
+        starting ``state`` because the audit drives real steps.
+        """
+        from tornado_gcm.precision.inv5 import audit_declared_vs_executed
+
+        if state is None:
+            raise RuntimeError(
+                "INV-5 audit drives real steps: pass state=<model State>"
+            )
+        return audit_declared_vs_executed(
+            self, self.policy, step_fn=self.step, step_args=(state,),
+            steps=steps, measure_overhead=measure_overhead,
+        )
+
+    def to(self, *args, **kwargs):
+        """Override nn.Module.to() to cascade to plain-object Grid tensors.
+
+        ``nn.Module.to()`` only migrates registered parameters/buffers.
+        Grid objects stored as plain attributes are invisible to it,
+        leaving basis and static tensors on CPU.  This override walks
+        the module tree to find and migrate every Grid.
+        """
+        super().to(*args, **kwargs)
+        _device = torch.device(args[0]) if args else kwargs.get('device', None)
+        if _device is not None:
+            _device = torch.device(_device) if not isinstance(_device, torch.device) else _device
+            for _attr in ("_dycore_pe",):
+                _obj = getattr(self, _attr, None)
+                if _obj is not None and hasattr(_obj, "to"):
+                    _obj.to(_device)
+                    # PES.to() clears the inv cache; repopulate on the
+                    # target device so cudagraph capture never sees linalg.inv.
+                    if hasattr(_obj, "_precompute_implicit_inverses"):
+                        _obj._precompute_implicit_inverses(self._inner_dt)
+            # Migrate all Grid objects in submodules (plain attributes,
+            # not parameters/buffers, so nn.Module.to() misses them).
+            for module in self.modules():
+                for name in dir(module):
+                    try:
+                        attr = getattr(module, name)
+                    except Exception:
+                        continue
+                    if isinstance(attr, spherical_harmonic.Grid):
+                        attr.to(_device)
+        return self
+
+    def cuda(self, device=None):
+        """Override nn.Module.cuda() to go through to() for full migration.
+
+        PyTorch ≥2.9 ``cuda()`` calls ``_apply()`` directly, bypassing
+        ``to()`` and leaving Grid/PES non-Module tensors on CPU.
+        """
+        if device is None:
+            device = torch.cuda.current_device()
+        return self.to(device=f'cuda:{device}')
 
     # ── Physics tendency (Z3 → Z1) ───────────────────────────────────
 
@@ -263,8 +488,10 @@ class NeuralGCMModel(nn.Module):
         if self.parameterization is None:
             return state.tree_map(torch.zeros_like)
 
-        z3_dtype = self.policy.compute_dtype(PrecisionZone.Z3_NEURAL_NETWORK)
-        z1_dtype = self.policy.compute_dtype(PrecisionZone.Z1_DYNAMICS_CORE)
+        z3_dtype = self.policy.get_effective_dtype(
+            PrecisionZone.Z3_NEURAL_NETWORK, subzone="Z3_NEURAL")
+        z1_dtype = self.policy.get_effective_dtype(
+            PrecisionZone.Z1_DYNAMICS_CORE)
 
         # Match input dtype to NN weight dtype to avoid mat1/mat2 mismatch.
         # When Z3 policy says BF16 but weights are FP32 (e.g. no weight
@@ -335,8 +562,10 @@ class NeuralGCMModel(nn.Module):
             return fixed
 
         # Legacy full-upcast path
-        z2_dtype = self.policy.compute_dtype(PrecisionZone.Z2_CONSERVATION_FIXER)
-        z1_dtype = self.policy.compute_dtype(PrecisionZone.Z1_DYNAMICS_CORE)
+        z2_dtype = self.policy.get_effective_dtype(
+            PrecisionZone.Z2_CONSERVATION_FIXER, subzone="Z2_FIXER")
+        z1_dtype = self.policy.get_effective_dtype(
+            PrecisionZone.Z1_DYNAMICS_CORE)
 
         # Z1 → Z2: upcast inputs for fixer
         state_z2 = state.tree_map(lambda t: t.to(z2_dtype))
@@ -366,8 +595,15 @@ class NeuralGCMModel(nn.Module):
     # ── O9-4 Diagnostic caching ──────────────────────────────────────
 
     def set_precision_policy(self, policy: "PrecisionPolicy") -> None:
-        """Replace the active precision policy at runtime."""
+        """Replace the active precision policy at runtime and fully re-wire
+        enforcement: dycore sub-zone overrides (E2) + per-module precision
+        dispatch (E1).  install_precision_hooks is idempotent and a no-op when
+        the policy carries no module dtype map."""
         self.policy = policy
+        dycore = getattr(self, "_dycore_pe", None)
+        if dycore is not None:
+            dycore._policy = policy
+        self.install_precision_hooks()
 
     def set_fixer(self, fixer: nn.Module | None) -> None:
         """Replace (or disable) the conservation fixer at runtime."""
@@ -529,25 +765,14 @@ class NeuralGCMModel(nn.Module):
             combined_eq, self._inner_dt, step_hook=step_hook
         )
 
-        # Wrap the tensor-level filters into State-level filters
-        # so they work with the time_integration step_with_filters API.
-        # JAX applies two sequential filters per inner substep:
-        #   1. dycore/ExponentialFilter  (tau=120min, order=3, cutoff=0)
-        #   2. stability/ExponentialFilter (tau=4min, order=10, cutoff=0.4)
-        dycore_tensor_filter = self.exp_filter
-        stability_tensor_filter = self.stability_filter
-
-        def dycore_state_filter(s: primitive_equations.State) -> primitive_equations.State:
+        # Combined dycore + stability filter in a single pass.
+        # Pre-computing the product scaling_a * scaling_b halves the number
+        # of per-inner-step tree traversals (2 sequential filters → 1).
+        def combined_state_filter(s: primitive_equations.State) -> primitive_equations.State:
             with record_function("Z0_spectral"):
-                return s.tree_map(dycore_tensor_filter)
+                return s.tree_map(self._inner_combined_filter)
 
-        filters = [time_integration.runge_kutta_step_filter(dycore_state_filter)]
-
-        if stability_tensor_filter is not None:
-            def stability_state_filter(s: primitive_equations.State) -> primitive_equations.State:
-                with record_function("Z0_stability"):
-                    return s.tree_map(stability_tensor_filter)
-            filters.append(time_integration.runge_kutta_step_filter(stability_state_filter))
+        filters = [time_integration.runge_kutta_step_filter(combined_state_filter)]
 
         return time_integration.step_with_filters(raw_step, filters)
 
@@ -596,8 +821,19 @@ class NeuralGCMModel(nn.Module):
 
         if self._dycore_equation is not None:
             # ── Coupled IMEX path ─────────────────────────────────────
+            integration_state = (
+                self._to_integration_coords(state)
+                if self._to_integration_coords is not None
+                else state
+            )
+            integration_tendency = (
+                self._to_integration_coords(physics_tendency)
+                if self._to_integration_coords is not None
+                else physics_tendency
+            )
+
             # Build inner step function with current (constant) physics
-            inner_step = self._build_inner_step_fn(physics_tendency)
+            inner_step = self._build_inner_step_fn(integration_tendency)
 
             # Inner loop: dycore_substeps iterations
             # With checkpoint_inner_steps, each substep recomputes forward
@@ -620,12 +856,12 @@ class NeuralGCMModel(nn.Module):
                             except Exception:
                                 pass
                         if self.config.checkpoint_inner_steps and self.training:
-                            state = torch_checkpoint.checkpoint(
-                                inner_step, state, use_reentrant=False,
+                            integration_state = torch_checkpoint.checkpoint(
+                                inner_step, integration_state, use_reentrant=False,
                             )
                         else:
-                            state = inner_step(state)
-                        state = self._sanitize_inner_state(state)
+                            integration_state = inner_step(integration_state)
+                        integration_state = self._sanitize_inner_state(integration_state)
             except Exception as exc:
                 # Re-raise NanoscopeShutterException with enriched context
                 try:
@@ -640,6 +876,12 @@ class NeuralGCMModel(nn.Module):
                 except ImportError:
                     pass
                 raise
+
+            state = (
+                self._from_integration_coords(integration_state)
+                if self._from_integration_coords is not None
+                else integration_state
+            )
         else:
             # ── Legacy simple-Euler path (no dycore) ──────────────────
             with record_function("Z1_dycore"):

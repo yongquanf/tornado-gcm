@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """PZHA (Precision-Zoned Hybrid Architecture) precision management.
 
@@ -45,6 +45,12 @@ from tornado_gcm.precision.zone_discovery import (
     ZoneAssignment,
     compare_with_pzha,
 )
+from tornado_gcm.precision.community_tuner import (
+    HiFPTuner,
+    PrecimoniousTuner,
+    HiFPTunerConfig,
+    HiFPTunerResult,
+)
 
 __all__ = [
     # Core PZHA
@@ -88,4 +94,9 @@ __all__ = [
     "DiscoveryResult",
     "ZoneAssignment",
     "compare_with_pzha",
+    # Precimonious/HiFPTuner-style Tuners
+    "HiFPTuner",
+    "PrecimoniousTuner",
+    "HiFPTunerConfig",
+    "HiFPTunerResult",
 ]

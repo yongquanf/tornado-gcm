@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Mixed-precision trainer with variable precision 3-phase training.
 
@@ -316,6 +316,11 @@ class MixedPrecisionTrainer:
     ) -> tuple[list[Any], Any]:
         """Autoregressive rollout.
 
+        When *steps* > 1 and the model is in training mode, each step is
+        wrapped with :func:`torch.utils.checkpoint.checkpoint` so that
+        intermediate activations are NOT stored — they are recomputed
+        during backward.  This reduces peak memory from O(steps) to O(1).
+
         Args:
             initial_state: starting state.
             steps: number of rollout steps.
@@ -326,9 +331,16 @@ class MixedPrecisionTrainer:
         """
         state = self._maybe_bridge_state_through_dtensor(initial_state)
         trajectory = []
+        _use_ckpt = steps > 1 and self.model.training
         for i in range(steps):
             step_forcing = forcings[i] if forcings is not None else None
-            state = self._raw_model.step(state, forcings=step_forcing)
+            if _use_ckpt:
+                state = checkpoint_util.checkpoint(
+                    self._raw_model.step, state, step_forcing,
+                    use_reentrant=False,
+                )
+            else:
+                state = self._raw_model.step(state, forcings=step_forcing)
             state = self._maybe_bridge_state_through_dtensor(state)
             trajectory.append(state)
         return trajectory, initial_state

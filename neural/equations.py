@@ -1,4 +1,4 @@
-﻿# Copyright 2026 yongquan fu
+# Copyright 2026 yongquan fu
 # SPDX-License-Identifier: Apache-2.0
 """Neural-level PDE equation wrappers — PyTorch implementation.
 
@@ -291,9 +291,8 @@ class HeldSuarezForcing(time_integration.ExplicitODE):
         kappa = self.physics_specs.kappa
 
         # σ levels
-        sigma_c = torch.tensor(
-            sigma.centers, dtype=state.vorticity.dtype,
-            device=state.vorticity.device,
+        sigma_c = sigma._buf._centers_torch.to(
+            device=state.vorticity.device, dtype=state.vorticity.dtype,
         ).reshape(-1, 1, 1)
 
         # Rayleigh friction coefficient: kf * max(0, (σ-σ_b)/(1-σ_b))
@@ -302,9 +301,8 @@ class HeldSuarezForcing(time_integration.ExplicitODE):
         )
 
         # Newtonian cooling coefficient
-        _, sin_lat = grid.nodal_axes
-        sin_lat_t = torch.tensor(sin_lat, dtype=state.vorticity.dtype,
-                                 device=state.vorticity.device)
+        sin_lat_t = grid._buf._sin_lat_torch.to(
+            device=state.vorticity.device, dtype=state.vorticity.dtype)
         cos2_lat = 1.0 - sin_lat_t ** 2
 
         kt = self.ka + (self.ks - self.ka) * torch.clamp(
@@ -318,8 +316,8 @@ class HeldSuarezForcing(time_integration.ExplicitODE):
 
         # Temperature tendency: -kt * (T - T_eq)
         nodal_T = grid.to_nodal(state.temperature_variation)
-        T_ref = torch.tensor(
-            self.ref_temps, dtype=nodal_T.dtype, device=nodal_T.device,
+        T_ref = self._get_ref_tensor(
+            device=nodal_T.device, dtype=nodal_T.dtype,
         ).reshape(-1, 1, 1)
         T_full = nodal_T + T_ref
         temp_tendency = -kt * (T_full - T_eq)
