@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: tornado_gcm
 
       - uses: actions/setup-python@v5
         with:
@@ -34,9 +36,11 @@ jobs:
         run: python -m pip install --upgrade pip build twine setuptools wheel
 
       - name: Compile check
+        working-directory: tornado_gcm
         run: python -m compileall -q .
 
       - name: Lint report (non-blocking)
+        working-directory: tornado_gcm
         run: |
           python -m pip install ruff black isort
           ruff check . --exit-zero
@@ -44,18 +48,21 @@ jobs:
           isort --check-only . || true
 
       - name: Build wheel
+        working-directory: tornado_gcm
         run: python -m build --wheel --no-isolation --outdir dist
 
       - name: Build sdist from standard-layout staging copy
+        working-directory: tornado_gcm
         run: python .github/scripts/build_sdist.py --output dist
 
       - name: Validate distributions
+        working-directory: tornado_gcm
         run: python -m twine check dist/*
 
       - uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: tornado_gcm/dist/
           if-no-files-found: error
 
   publish:
@@ -71,6 +78,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: tornado_gcm
 
       - uses: actions/setup-python@v5
         with:
@@ -78,6 +87,7 @@ jobs:
 
       - name: Check tag matches package version
         if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: tornado_gcm
         run: |
           python - <<'PY'
           import os
