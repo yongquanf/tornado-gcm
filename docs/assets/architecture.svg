@@ -1,0 +1,377 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2040 1400" width="100%" role="img" aria-labelledby="title desc">
+<title id="title">TornadoGCM end-to-end system flow</title>
+<desc id="desc">Distributed training and production inference around a shared PZHA model step, with the SDA precision governance plane.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="8" markerHeight="8" markerUnits="strokeWidth"><path d="M1,1 L11,6 L1,11 Z" fill="context-stroke"/></marker>
+<marker id="arrow-both" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="8" markerHeight="8" markerUnits="strokeWidth" orient="auto-start-reverse"><path d="M1,1 L11,6 L1,11 Z" fill="context-stroke"/></marker>
+</defs>
+<rect x="0" y="0" width="2040" height="1400" fill="#FFFFFF"/>
+<text x="48" y="52" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="32.86" fill="#1C1C1C" text-anchor="start" font-weight="700">TornadoGCM — end-to-end system flow</text>
+<text x="48" y="84" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="18.02" fill="#5C5C5C" text-anchor="start" font-weight="400">PyTorch NeuralGCM · PZHA precision zones · SDA control plane · distributed training · production inference</text>
+<text x="48" y="112" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="400">1 batch → 2 forward K steps → 3 PZHA model step → 4 loss + all-reduce → 5 checkpoint → 6 rollout → 7 precision hot-swap → 8 failure recovery</text>
+<rect x="36" y="140" width="1600" height="310" rx="8" fill="#F7F7F7" stroke="#E6E6E6" stroke-width="1.0" opacity="1.0"/>
+<text x="52" y="170" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19.08" fill="#1C1C1C" text-anchor="start" font-weight="700">TRAINING PLANE</text>
+<text x="52" y="192" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#5C5C5C" text-anchor="start" font-weight="400">distributed · K-step rollout · DDP / FSDP / DTensor</text>
+<rect x="36" y="480" width="1600" height="420" rx="8" fill="#F1F4F7" stroke="#DDE5EC" stroke-width="1.0" opacity="1.0"/>
+<text x="52" y="510" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19.08" fill="#1C1C1C" text-anchor="start" font-weight="700">SHARED MODEL STEP · one rank's view</text>
+<text x="52" y="534" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#5C5C5C" text-anchor="start" font-weight="400">train + infer share this step · diamonds = zone casts</text>
+<rect x="36" y="930" width="1600" height="290" rx="8" fill="#F4F0E9" stroke="#EDE6DA" stroke-width="1.0" opacity="1.0"/>
+<text x="52" y="960" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19.08" fill="#1C1C1C" text-anchor="start" font-weight="700">INFERENCE &amp; EVALUATION PLANE</text>
+<text x="52" y="982" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#5C5C5C" text-anchor="start" font-weight="400">chunked rollout · NaN guard / rollback · Zarr output</text>
+<rect x="1670" y="140" width="334" height="1080" rx="8" fill="#F7F4FB" stroke="#E6DDF2" stroke-width="1.2" opacity="1.0"/>
+<text x="1688" y="170" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19.08" fill="#7B5EA7" text-anchor="start" font-weight="700">SDA / PZHA</text>
+<text x="1688" y="192" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#5C5C5C" text-anchor="start" font-weight="400">precision governance plane</text>
+<path d="M56,220 A100.0,10 0 0 1 256,220 V300 A100.0,10 0 0 1 56,300 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<path d="M56,220 A100.0,10 0 0 0 256,220" fill="none" stroke="#1F6FB2" stroke-width="1.8"/>
+<text x="156.0" y="256.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1F6FB2" text-anchor="middle" font-weight="600">ERA5 / WeatherBench</text>
+<text x="156.0" y="274.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="middle" font-weight="400">Zarr · (T, L, lon, lat)</text>
+<text x="156" y="326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400">disk</text>
+<rect x="320" y="215" width="150" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="332" y="237" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">DataLoader</text>
+<text x="332" y="257" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">DistributedSampler</text>
+<text x="332" y="272" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">batches [B,T,L,…]</text>
+<text x="395" y="322" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400">host DRAM</text>
+<rect x="500" y="185" width="460" height="240" rx="8" fill="none" stroke="#4A4A4A" stroke-width="2.6" opacity="1.0"/>
+<text x="516" y="210" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#4A4A4A" text-anchor="start" font-weight="700">GPU node · N ranks</text>
+<text x="944" y="210" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#5C5C5C" text-anchor="end" font-weight="400">fault domain</text>
+<rect x="520" y="235" width="125" height="140" rx="4" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="2.0" opacity="1.0"/>
+<rect x="514" y="239" width="6" height="132" rx="1" fill="#E9E9E9" stroke="#4A4A4A" stroke-width="1.2" opacity="1.0"/>
+<rect x="530" y="249" width="105" height="98" rx="3" fill="#FAFAFA" stroke="#4A4A4A" stroke-width="1.4" opacity="1.0"/>
+<rect x="542" y="263" width="34" height="34" rx="2" fill="#EAEFF4" stroke="#4A4A4A" stroke-width="1.6" opacity="1.0"/>
+<text x="559" y="284" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10.6" fill="#4A4A4A" text-anchor="middle" font-weight="400">SM</text>
+<rect x="586" y="261" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="608" y="261" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="586" y="283" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="608" y="283" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="534" y="353" width="97" height="10" rx="1" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.2" opacity="1.0"/>
+<path d="M538,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M549,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M560,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M571,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M582,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M593,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M604,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M615,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<text x="582.5" y="371" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#4A4A4A" text-anchor="middle" font-weight="600">rank 0</text>
+<rect x="667" y="235" width="125" height="140" rx="4" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="2.0" opacity="1.0"/>
+<rect x="661" y="239" width="6" height="132" rx="1" fill="#E9E9E9" stroke="#4A4A4A" stroke-width="1.2" opacity="1.0"/>
+<rect x="677" y="249" width="105" height="98" rx="3" fill="#FAFAFA" stroke="#4A4A4A" stroke-width="1.4" opacity="1.0"/>
+<rect x="689" y="263" width="34" height="34" rx="2" fill="#EAEFF4" stroke="#4A4A4A" stroke-width="1.6" opacity="1.0"/>
+<text x="706" y="284" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10.6" fill="#4A4A4A" text-anchor="middle" font-weight="400">SM</text>
+<rect x="733" y="261" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="755" y="261" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="733" y="283" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="755" y="283" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="681" y="353" width="97" height="10" rx="1" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.2" opacity="1.0"/>
+<path d="M685,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M696,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M707,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M718,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M729,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M740,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M751,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M762,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<text x="729.5" y="371" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#4A4A4A" text-anchor="middle" font-weight="600">rank 1</text>
+<rect x="814" y="235" width="125" height="140" rx="4" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="2.0" opacity="1.0"/>
+<rect x="808" y="239" width="6" height="132" rx="1" fill="#E9E9E9" stroke="#4A4A4A" stroke-width="1.2" opacity="1.0"/>
+<rect x="824" y="249" width="105" height="98" rx="3" fill="#FAFAFA" stroke="#4A4A4A" stroke-width="1.4" opacity="1.0"/>
+<rect x="836" y="263" width="34" height="34" rx="2" fill="#EAEFF4" stroke="#4A4A4A" stroke-width="1.6" opacity="1.0"/>
+<text x="853" y="284" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="10.6" fill="#4A4A4A" text-anchor="middle" font-weight="400">SM</text>
+<rect x="880" y="261" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="902" y="261" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="880" y="283" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="902" y="283" width="16" height="16" rx="1" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.0" opacity="1.0"/>
+<rect x="828" y="353" width="97" height="10" rx="1" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.2" opacity="1.0"/>
+<path d="M832,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M843,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M854,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M865,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M876,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M887,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M898,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<path d="M909,354 V362" stroke="#4A4A4A" stroke-width="1"/>
+<text x="876.5" y="371" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#4A4A4A" text-anchor="middle" font-weight="600">rank r</text>
+<polyline points="645,305 667,305" fill="none" stroke="#C0392B" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<polyline points="792,305 814,305" fill="none" stroke="#C0392B" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<text x="730" y="396" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#C0392B" text-anchor="middle" font-weight="400">NCCL all-reduce · ring / tree · Σ gradients</text>
+<text x="730" y="416" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400">HBM: shards + activations + grads</text>
+<text x="730" y="230" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#5C5C5C" text-anchor="middle" font-weight="400">model shard + HBM</text>
+<rect x="1000" y="220" width="170" height="90" rx="6" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8" opacity="1.0"/>
+<text x="1012" y="242" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#1F6FB2" text-anchor="start" font-weight="600">Trajectory loss</text>
+<text x="1012" y="262" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">MSE + physics</text>
+<text x="1012" y="277" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">constraints</text>
+<rect x="1200" y="220" width="190" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="1212" y="242" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">Backward</text>
+<text x="1212" y="262" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">clip · FP32 EMA</text>
+<rect x="1420" y="220" width="180" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="1432" y="242" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">Optimizer</text>
+<text x="1432" y="262" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">Adam · EMA update</text>
+<path d="M1440,350 A90.0,10 0 0 1 1620,350 V400 A90.0,10 0 0 1 1440,400 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<path d="M1440,350 A90.0,10 0 0 0 1620,350" fill="none" stroke="#1F6FB2" stroke-width="1.8"/>
+<text x="1530.0" y="371.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1F6FB2" text-anchor="middle" font-weight="600">checkpoint .pt</text>
+<text x="1530.0" y="389.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="middle" font-weight="400">{model, optimizer, EMA}</text>
+<text x="1530" y="425" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400">disk</text>
+<rect x="1200" y="345" width="190" height="65" rx="6" fill="#FAE6E3" stroke="#C0392B" stroke-width="1.8" opacity="1.0"/>
+<text x="1212" y="367" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#C0392B" text-anchor="start" font-weight="600">NaN / grad explosion</text>
+<text x="1212" y="387" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#5C5C5C" text-anchor="start" font-weight="400">detector</text>
+<polyline points="256,260 320,260" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="288" y="250" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">batch</text>
+<circle cx="288" cy="275" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="288" y="279.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">1</text>
+<polyline points="470,260 500,260" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="1170,265 1200,265" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="1390,265 1420,265" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="1510,310 1530,340" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="1560" y="328" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#4A4A4A" text-anchor="middle" font-weight="400" class="halo">save</text>
+<polyline points="1295,310 1295,345" fill="none" stroke="#C0392B" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1.5 5" marker-end="url(#arrow)"/>
+<text x="1322" y="330" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#C0392B" text-anchor="middle" font-weight="400" class="halo">NaN?</text>
+<polyline points="1390,377 1440,377" fill="none" stroke="#C0392B" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1.5 5" marker-end="url(#arrow)"/>
+<text x="1415" y="368" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#C0392B" text-anchor="middle" font-weight="400" class="halo">resume</text>
+<polyline points="1510,220 1510,176 730,176 730,185" fill="none" stroke="#5C5C5C" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+<text x="1120" y="168" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="middle" font-weight="400" class="halo">next step</text>
+<circle cx="1180" cy="176" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="1180" y="180.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">4</text>
+<polyline points="1295,410 1295,435 1645,435 1645,514" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5"/>
+<text x="1500" y="425" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#7B5EA7" text-anchor="middle" font-weight="400" class="halo">escalate precision</text>
+<circle cx="1645" cy="470" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="1645" y="474.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">8</text>
+<polyline points="1645,526 1645,780 1690,780" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<polyline points="730,425 730,470 480,470 480,620" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="610" y="468" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">forward K steps (one rank)</text>
+<circle cx="730" cy="455" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="730" y="459.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">2</text>
+<polyline points="1330,620 1330,460 980,460 980,265 1000,265" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="1120" y="468" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">trajectory [B,K,…]</text>
+<circle cx="980" cy="300" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="980" y="304.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">4</text>
+<path d="M56,540 H240 L256,556 V630 H56 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<path d="M240,540 V556 H256" fill="none" stroke="#1F6FB2" stroke-width="1.8"/>
+<text x="68" y="567" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1F6FB2" text-anchor="start" font-weight="600">JAX NeuralGCM</text>
+<text x="68" y="586" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">checkpoint .pkl</text>
+<text x="156" y="645" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400">disk</text>
+<rect x="300" y="540" width="170" height="70" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="312" y="562" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">load_jax_weights</text>
+<text x="312" y="582" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">strict=False · transpose</text>
+<polyline points="256,585 300,585" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="278" y="575" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#4A4A4A" text-anchor="middle" font-weight="400" class="halo">read</text>
+<polyline points="470,575 470,515 476,515" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4"/>
+<polyline points="486,515 840,515 840,540" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="700" y="506" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#4A4A4A" text-anchor="middle" font-weight="400" class="halo">weights</text>
+<rect x="320" y="620" width="180" height="100" rx="6" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8" opacity="1.0"/>
+<text x="332" y="642" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#1F6FB2" text-anchor="start" font-weight="600">Encoder</text>
+<text x="332" y="662" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">WeatherBench → modal</text>
+<text x="332" y="677" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">State construction</text>
+<path d="M540,624 L558,610 H690 V711 L672,725 H540 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<rect x="540.0" y="624.0" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="540.0" y="649.25" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="540.0" y="674.5" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="540.0" y="699.75" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="566.4" y="624.0" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="566.4" y="649.25" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="566.4" y="674.5" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="566.4" y="699.75" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="592.8" y="624.0" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="592.8" y="649.25" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="592.8" y="674.5" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="592.8" y="699.75" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="619.2" y="624.0" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="619.2" y="649.25" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="619.2" y="674.5" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="619.2" y="699.75" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="645.6" y="624.0" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="645.6" y="649.25" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="645.6" y="674.5" width="26.4" height="25.25" fill="#E3EFF9" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<rect x="645.6" y="699.75" width="26.4" height="25.25" fill="#FFFFFF" stroke="#1F6FB2" stroke-opacity=".35" stroke-width=".8"/>
+<text x="615" y="743" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#1F6FB2" text-anchor="middle" font-weight="600">State (L, m, l) · fp32</text>
+<text x="615" y="760" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#5C5C5C" text-anchor="middle" font-weight="400">ζ, δ, T', log ps</text>
+<rect x="760" y="540" width="200" height="110" rx="6" fill="#E4F3EA" stroke="#2E8B57" stroke-width="1.8" opacity="1.0"/>
+<text x="772" y="562" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#2E8B57" text-anchor="start" font-weight="600">Z3 · Learned physics</text>
+<text x="772" y="582" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">EPD 2365 → 384 → 192</text>
+<text x="772" y="597" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">BF16 compute / params</text>
+<rect x="760" y="700" width="200" height="110" rx="6" fill="#FDF1DC" stroke="#E08A1E" stroke-width="1.8" opacity="1.0"/>
+<text x="772" y="722" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#E08A1E" text-anchor="start" font-weight="600">Z1 · Dycore</text>
+<text x="772" y="742" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">PrimitiveEquationsSigma</text>
+<text x="772" y="757" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">IMEX-RK3-SIL3 ×5</text>
+<text x="772" y="772" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">spectral filter · TF32</text>
+<rect x="1020" y="620" width="180" height="100" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="1032" y="642" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">ODE solver</text>
+<text x="1032" y="662" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">IMEX-RK3-SIL3</text>
+<text x="1032" y="677" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">implicit + explicit</text>
+<rect x="1240" y="620" width="180" height="100" rx="6" fill="#FAE6E3" stroke="#C0392B" stroke-width="1.8" opacity="1.0"/>
+<text x="1252" y="642" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#C0392B" text-anchor="start" font-weight="600">Z2 · Fixer</text>
+<text x="1252" y="662" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">dry-air mass</text>
+<text x="1252" y="677" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">total energy · FP64</text>
+<rect x="1460" y="620" width="150" height="100" rx="6" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8" opacity="1.0"/>
+<text x="1472" y="642" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#1F6FB2" text-anchor="start" font-weight="600">Decoder</text>
+<text x="1472" y="662" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">modal → WB dict</text>
+<polyline points="500,670 540,670" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="520" y="660" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">x(t)</text>
+<polyline points="690,655 715,655 715,595 760,595" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="735" y="640" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">features</text>
+<polyline points="690,685 725,685 725,755 760,755" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="742" y="720" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">state</text>
+<polyline points="960,595 990,595 990,650 1020,650" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="1005" y="610" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">tendency</text>
+<polyline points="960,755 1005,755 1005,690 1020,690" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="1015" y="730" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">tendency</text>
+<polyline points="1200,670 1240,670" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="1220" y="660" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">x(t+1)*</text>
+<polyline points="1420,670 1460,670" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="1440" y="660" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">x(t+1)</text>
+<path d="M520,663 L527,670 L520,677 L513,670 Z" fill="#7B5EA7" stroke="#FFFFFF" stroke-width="1.5"/>
+<path d="M740,588 L747,595 L740,602 L733,595 Z" fill="#7B5EA7" stroke="#FFFFFF" stroke-width="1.5"/>
+<path d="M990,643 L997,650 L990,657 L983,650 Z" fill="#7B5EA7" stroke="#FFFFFF" stroke-width="1.5"/>
+<path d="M1220,663 L1227,670 L1220,677 L1213,670 Z" fill="#7B5EA7" stroke="#FFFFFF" stroke-width="1.5"/>
+<path d="M1440,663 L1447,670 L1440,677 L1433,670 Z" fill="#7B5EA7" stroke="#FFFFFF" stroke-width="1.5"/>
+<polyline points="1535,720 1535,830 615,830 615,725" fill="none" stroke="#5C5C5C" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+<text x="1075" y="820" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="middle" font-weight="400" class="halo">repeat inner_steps × outer_steps</text>
+<circle cx="960" cy="812" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="960" y="816.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">3</text>
+<polyline points="1535,830 1535,860 700,860 700,980" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="1120" y="878" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">model output → inference</text>
+<circle cx="700" cy="920" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="700" y="924.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">6</text>
+<path d="M56,1000 A100.0,10 0 0 1 256,1000 V1070 A100.0,10 0 0 1 56,1070 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<path d="M56,1000 A100.0,10 0 0 0 256,1000" fill="none" stroke="#1F6FB2" stroke-width="1.8"/>
+<text x="156.0" y="1031.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1F6FB2" text-anchor="middle" font-weight="600">Initial condition</text>
+<text x="156.0" y="1049.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="middle" font-weight="400">encoded modal State</text>
+<rect x="320" y="985" width="200" height="90" rx="6" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8" opacity="1.0"/>
+<text x="332" y="1007" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#1F6FB2" text-anchor="start" font-weight="600">MPInference</text>
+<text x="332" y="1027" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">SDAInference.run()</text>
+<text x="332" y="1042" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">outer_steps · no_grad</text>
+<rect x="560" y="985" width="200" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="572" y="1007" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">InferenceRunner</text>
+<text x="572" y="1027" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">chunked · NaN guard</text>
+<text x="572" y="1042" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">atomic checkpoint</text>
+<rect x="800" y="985" width="180" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="812" y="1007" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">ZarrWriter</text>
+<text x="812" y="1027" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">numpy / async</text>
+<text x="812" y="1042" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">zarr output</text>
+<path d="M1020,995 A90.0,10 0 0 1 1200,995 V1075 A90.0,10 0 0 1 1020,1075 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<path d="M1020,995 A90.0,10 0 0 0 1200,995" fill="none" stroke="#1F6FB2" stroke-width="1.8"/>
+<text x="1110.0" y="1031.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1F6FB2" text-anchor="middle" font-weight="600">forecast.zarr</text>
+<text x="1110.0" y="1049.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="middle" font-weight="400">u, v, t, z + tracers</text>
+<text x="1110" y="1102" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400">disk</text>
+<rect x="1240" y="985" width="180" height="90" rx="6" fill="#E4F3EA" stroke="#2E8B57" stroke-width="1.8" opacity="1.0"/>
+<text x="1252" y="1007" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#2E8B57" text-anchor="start" font-weight="600">EvaluationRunner</text>
+<text x="1252" y="1027" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">RMSE · ACC · bias</text>
+<rect x="1460" y="985" width="140" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="1472" y="1007" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15.37" fill="#4A4A4A" text-anchor="start" font-weight="600">metrics</text>
+<text x="1472" y="1027" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">Day-3/5/10</text>
+<rect x="320" y="1120" width="200" height="60" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="332" y="1142" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#4A4A4A" text-anchor="start" font-weight="600">EnsembleRunner</text>
+<text x="332" y="1162" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">optional vmap / members</text>
+<rect x="800" y="1120" width="180" height="60" rx="6" fill="#FAE6E3" stroke="#C0392B" stroke-width="1.8" opacity="1.0"/>
+<text x="812" y="1142" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#C0392B" text-anchor="start" font-weight="600">last checkpoint</text>
+<text x="812" y="1162" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">rollback target</text>
+<polyline points="256,1035 320,1035" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="288" y="1025" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">x_0</text>
+<polyline points="520,1035 560,1035" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="760,1035 800,1035" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="980,1035 1020,1035" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="1000" y="1025" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#4A4A4A" text-anchor="middle" font-weight="400" class="halo">write</text>
+<polyline points="1200,1035 1240,1035" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="1420,1035 1460,1035" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<polyline points="520,1035 520,720 500,720" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="610" y="890" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#1F6FB2" text-anchor="middle" font-weight="400" class="halo">rollout ×N (no_grad)</text>
+<polyline points="660,1075 660,1100 890,1100 890,1120" fill="none" stroke="#C0392B" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1.5 5" marker-end="url(#arrow)"/>
+<text x="775" y="1092" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#C0392B" text-anchor="middle" font-weight="400" class="halo">NaN → rollback</text>
+<polyline points="410,1075 410,1120" fill="none" stroke="#5C5C5C" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+<text x="430" y="1102" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="middle" font-weight="400" class="halo">optional</text>
+<polyline points="1620,375 1665,375 1665,514" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4"/>
+<text x="1120" y="942" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#4A4A4A" text-anchor="middle" font-weight="400" class="halo">export_inference_checkpoint (BF16)</text>
+<polyline points="1665,526 1665,950 540,950 540,1035 520,1035" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<polyline points="1665,1110 890,1110 890,1120" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="1240" y="1102" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#4A4A4A" text-anchor="middle" font-weight="400" class="halo">last ckpt</text>
+<path d="M1690,205 H1964 L1980,221 V275 H1690 Z" fill="#F1ECF9" stroke="#7B5EA7" stroke-width="1.8"/>
+<path d="M1964,205 V221 H1980" fill="none" stroke="#7B5EA7" stroke-width="1.8"/>
+<text x="1702" y="232" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#7B5EA7" text-anchor="start" font-weight="600">SDA YAML</text>
+<text x="1702" y="251" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">policy · scheduler · storage</text>
+<rect x="1690" y="300" width="290" height="255" rx="6" fill="#FFFFFF" stroke="#7B5EA7" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="322" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#7B5EA7" text-anchor="start" font-weight="700">PrecisionPolicy</text>
+<text x="1966" y="322" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="end" font-weight="400">dtype / zone</text>
+<rect x="1702" y="332" width="266" height="48" rx="4" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.4" opacity="1.0"/>
+<text x="1714" y="352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.25" fill="#1F6FB2" text-anchor="start" font-weight="700">Z0 · FP64</text>
+<text x="1714" y="370" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">bases / coords / implicit</text>
+<rect x="1702" y="386" width="266" height="48" rx="4" fill="#FDF1DC" stroke="#E08A1E" stroke-width="1.4" opacity="1.0"/>
+<text x="1714" y="406" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.25" fill="#E08A1E" text-anchor="start" font-weight="700">Z1 · FP32 / TF32</text>
+<text x="1714" y="424" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">SHT / dycore einsums</text>
+<rect x="1702" y="440" width="266" height="48" rx="4" fill="#FAE6E3" stroke="#C0392B" stroke-width="1.4" opacity="1.0"/>
+<text x="1714" y="460" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.25" fill="#C0392B" text-anchor="start" font-weight="700">Z2 · FP64</text>
+<text x="1714" y="478" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">mass / energy fixers</text>
+<rect x="1702" y="494" width="266" height="48" rx="4" fill="#E4F3EA" stroke="#2E8B57" stroke-width="1.4" opacity="1.0"/>
+<text x="1714" y="514" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.25" fill="#2E8B57" text-anchor="start" font-weight="700">Z3 · BF16</text>
+<text x="1714" y="532" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">EPD / towers</text>
+<rect x="1690" y="575" width="290" height="60" rx="6" fill="#F1ECF9" stroke="#7B5EA7" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="597" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#7B5EA7" text-anchor="start" font-weight="600">zone_cast</text>
+<text x="1702" y="617" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">f64_math · einsum_highest</text>
+<rect x="1690" y="655" width="290" height="60" rx="6" fill="#F1ECF9" stroke="#7B5EA7" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="677" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#7B5EA7" text-anchor="start" font-weight="600">SDAProfiler</text>
+<text x="1702" y="697" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">grad · spectral · zone timing</text>
+<rect x="1690" y="735" width="290" height="80" rx="6" fill="#F1ECF9" stroke="#7B5EA7" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="757" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#7B5EA7" text-anchor="start" font-weight="600">PrecisionScheduler</text>
+<text x="1702" y="777" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">milestone · loss_aware</text>
+<text x="1702" y="792" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">stability_aware</text>
+<rect x="1690" y="835" width="290" height="55" rx="6" fill="#F1ECF9" stroke="#7B5EA7" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="857" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#7B5EA7" text-anchor="start" font-weight="600">hot-swap policy</text>
+<text x="1702" y="877" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">re-apply TF32</text>
+<rect x="1690" y="910" width="290" height="60" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="932" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.31" fill="#4A4A4A" text-anchor="start" font-weight="600">ZoneDiscovery</text>
+<text x="1702" y="952" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">torch.export → FX → clusters</text>
+<rect x="1690" y="990" width="290" height="90" rx="6" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.8" opacity="1.0"/>
+<text x="1702" y="1012" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#4A4A4A" text-anchor="start" font-weight="600">Data-plane backends (optional)</text>
+<text x="1702" y="1032" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">Storage exact / lossy · zstd</text>
+<text x="1702" y="1047" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">Sparse FP32 + BF16</text>
+<text x="1702" y="1062" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">Accelerator compile / Triton</text>
+<rect x="1690" y="1100" width="290" height="90" rx="6" fill="#FFFFFF" stroke="#7B5EA7" stroke-width="1.2" stroke-dasharray="6 4" opacity="1.0"/>
+<text x="1702" y="1124" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#7B5EA7" text-anchor="start" font-weight="600">SDAReport</text>
+<text x="1702" y="1144" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#5C5C5C" text-anchor="start" font-weight="400">logs · TensorBoard · zone audits</text>
+<text x="1702" y="1162" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#5C5C5C" text-anchor="start" font-weight="400">host policy applied at GPU zone boundaries</text>
+<polyline points="1835,275 1835,300" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<text x="1850" y="290" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#7B5EA7" text-anchor="middle" font-weight="400" class="halo">load</text>
+<polyline points="1835,555 1835,575" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<polyline points="1835,715 1835,735" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<polyline points="1835,815 1835,835" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<polyline points="1980,862 1992,862 1992,305 1980,305" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<polyline points="1835,910 1835,890" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<text x="1852" y="900" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.13" fill="#7B5EA7" text-anchor="middle" font-weight="400" class="halo">discovered policy</text>
+<polyline points="1690,520 1618,520" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<text x="1652" y="510" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.66" fill="#7B5EA7" text-anchor="middle" font-weight="400" class="halo">policy → zones</text>
+<rect x="36" y="1245" width="1968" height="120" rx="6" fill="#FFFFFF" stroke="#D6D6D6" stroke-width="1.0" opacity="1.0"/>
+<text x="50" y="1267" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1C1C1C" text-anchor="start" font-weight="700">LEGEND</text>
+<rect x="50" y="1279" width="24" height="16" rx="3" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.4" opacity="1.0"/>
+<text x="82" y="1292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">data / state tensor / I/O</text>
+<rect x="365" y="1279" width="24" height="16" rx="3" fill="#E4F3EA" stroke="#2E8B57" stroke-width="1.4" opacity="1.0"/>
+<text x="397" y="1292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">Z3 learned physics (BF16)</text>
+<rect x="680" y="1279" width="24" height="16" rx="3" fill="#FDF1DC" stroke="#E08A1E" stroke-width="1.4" opacity="1.0"/>
+<text x="712" y="1292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">Z1 dynamics (FP32 / TF32)</text>
+<rect x="995" y="1279" width="24" height="16" rx="3" fill="#FAE6E3" stroke="#C0392B" stroke-width="1.4" opacity="1.0"/>
+<text x="1027" y="1292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">Z2 conservation fixer (FP64)</text>
+<rect x="1310" y="1279" width="24" height="16" rx="3" fill="#F1ECF9" stroke="#7B5EA7" stroke-width="1.4" opacity="1.0"/>
+<text x="1342" y="1292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">SDA / precision control</text>
+<rect x="1625" y="1279" width="24" height="16" rx="3" fill="#F2F2F2" stroke="#4A4A4A" stroke-width="1.4" opacity="1.0"/>
+<text x="1657" y="1292" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">infrastructure / orchestration</text>
+<polyline points="50,1321 92,1321" fill="none" stroke="#1F6FB2" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)"/>
+<text x="100" y="1326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">tensor / data flow</text>
+<polyline points="365,1321 407,1321" fill="none" stroke="#C0392B" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+<text x="415" y="1326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">NCCL all-reduce (Σg)</text>
+<polyline points="680,1321 722,1321" fill="none" stroke="#7B5EA7" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#arrow)"/>
+<text x="730" y="1326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">policy / config control</text>
+<polyline points="995,1321 1037,1321" fill="none" stroke="#C0392B" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="1.5 5" marker-end="url(#arrow)"/>
+<text x="1045" y="1326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">failure / rollback</text>
+<polyline points="1310,1321 1352,1321" fill="none" stroke="#4A4A4A" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+<text x="1360" y="1326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">artifact I/O (disk)</text>
+<polyline points="1625,1321 1667,1321" fill="none" stroke="#5C5C5C" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+<text x="1675" y="1326" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.72" fill="#5C5C5C" text-anchor="start" font-weight="400">rollout / repeat loop</text>
+<path d="M50,1347 A17.0,10 0 0 1 84,1347 V1347 A17.0,10 0 0 1 50,1347 Z" fill="#E3EFF9" stroke="#1F6FB2" stroke-width="1.8"/>
+<path d="M50,1347 A17.0,10 0 0 0 84,1347" fill="none" stroke="#1F6FB2" stroke-width="1.8"/>
+<text x="67.0" y="1343.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="14.84" fill="#1F6FB2" text-anchor="middle" font-weight="600"></text>
+<text x="67.0" y="1361.0" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="middle" font-weight="400"></text>
+<text x="92" y="1352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">artifact (dataset / checkpoint / forecast)</text>
+<path d="M376,1341 L382,1347 L376,1353 L370,1347 Z" fill="#7B5EA7" stroke="#FFFFFF" stroke-width="1.5"/>
+<text x="390" y="1352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">zone_cast boundary</text>
+<circle cx="556" cy="1347" r="11" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.4"/>
+<text x="556" y="1351.5" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13.78" fill="#1C1C1C" text-anchor="middle" font-weight="600">1</text>
+<text x="572" y="1352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">ordered flow</text>
+<text x="696" y="1352" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12.19" fill="#5C5C5C" text-anchor="start" font-weight="400">State placement: GPU HBM = model shards / activations / grads  ·  host DRAM = batch prefetch  ·  disk = ERA5 / checkpoint / forecast</text>
+</svg>

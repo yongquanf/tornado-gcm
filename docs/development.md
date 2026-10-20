@@ -51,24 +51,66 @@ mkdocs build --strict            # exactly what Read the Docs runs
 Read the Docs reads `.readthedocs.yaml`, which installs
 `docs/requirements.txt` and builds `mkdocs.yml`.
 
-## Build a release
+## Automated release
+
+`.github/workflows/release.yml` implements the release loop.
+
+| Trigger | Build + validate | PyPI | Read the Docs |
+|---|---|---|---|
+| push to `main` | yes | no | `latest` |
+| push tag `vX.Y.Z` | yes | yes | tag version (falls back to `latest`) |
+| manual dispatch | yes | only if `publish` is checked | no |
+
+PyPI rejects duplicate versions, so publishing is tag-driven. Every release
+needs a new version.
+
+### One-time setup
+
+1. **PyPI Trusted Publishing** (no API token stored in GitHub):
+   - Open <https://pypi.org/manage/project/tornado-gcm/settings/publishing/>
+   - Add a GitHub publisher with owner `yongquanf`, repository
+     `tornado-gcm`, workflow `release.yml`, and environment `pypi`.
+2. **Read the Docs** (choose one):
+   - Connect the GitHub integration in the RTD project dashboard, which
+     builds on every push; or
+   - Create an RTD API token and add it as the GitHub Actions secret
+     `RTD_API_TOKEN`. The workflow then triggers the matching version.
+3. **GitHub environment** `pypi` (optional): add protection rules or
+   required reviewers for the publish job.
+
+### Release a new version
 
 ```bash
-python -m build --wheel --no-isolation
+# 1. Bump the version in pyproject.toml, e.g. 0.1.0 -> 0.1.1
+# 2. Commit and tag
+git add pyproject.toml
+git commit -m "release: 0.1.1"
+git tag v0.1.1
+git push origin main --tags
+```
+
+The workflow then:
+
+1. compiles the package and builds the wheel;
+2. builds the sdist through `.github/scripts/build_sdist.py`;
+3. runs `twine check`;
+4. verifies the tag matches `pyproject.toml` and publishes through
+   Trusted Publishing;
+5. triggers the Read the Docs build.
+
+## Manual build and upload
+
+```bash
+python -m build --wheel --no-isolation --outdir dist
+python .github/scripts/build_sdist.py --output dist
+python -m twine check dist/*
+python -m twine upload --repository pypi dist/*
 ```
 
 The repository root is the `tornado_gcm` package and `pyproject.toml` maps
 it through `package-dir = { "" = ".." }`. A wheel builds directly from the
-root. A source distribution cannot be produced directly because setuptools
-cannot emit files outside the project root; build the sdist from a
-standard-layout staging copy containing a `tornado_gcm/` directory.
-
-## Upload to PyPI
-
-```bash
-python -m twine check dist/*
-python -m twine upload --repository pypi dist/*
-```
+root; the sdist script stages a standard layout because setuptools cannot
+emit files outside the project root.
 
 On Windows, twine's progress renderer can raise `UnicodeEncodeError` under
 a GBK console. Run the upload with UTF-8 mode:

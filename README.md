@@ -25,6 +25,10 @@
 
 ## Architecture Overview
 
+An end-to-end system flow diagram — covering distributed training, the PZHA
+model step, production inference, and the SDA precision-governance plane — is
+in the [documentation](https://tornado-gcm.readthedocs.io/en/latest/architecture/).
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         AtmosphereModel (facade)                        │

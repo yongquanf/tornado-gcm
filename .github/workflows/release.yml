@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the current pyproject version to PyPI"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: python -m pip install --upgrade pip build twine setuptools wheel
+
+      - name: Compile check
+        run: python -m compileall -q .
+
+      - name: Lint report (non-blocking)
+        run: |
+          python -m pip install ruff black isort
+          ruff check . --exit-zero
+          black --check . || true
+          isort --check-only . || true
+
+      - name: Build wheel
+        run: python -m build --wheel --no-isolation --outdir dist
+
+      - name: Build sdist from standard-layout staging copy
+        run: python .github/scripts/build_sdist.py --output dist
+
+      - name: Validate distributions
+        run: python -m twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          version = re.search(r'^version = "([^"]+)"', text, re.MULTILINE).group(1)
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          if version != tag:
+              raise SystemExit(
+                  f"Tag {tag} does not match pyproject version {version}"
+              )
+          print("version OK:", version)
+          PY
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish distributions
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  docs:
+    name: Trigger Read the Docs
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Read the Docs build
+        env:
+          RTD_API_TOKEN: ${{ secrets.RTD_API_TOKEN }}
+        run: |
+          if [ -z "$RTD_API_TOKEN" ]; then
+            echo "RTD_API_TOKEN is not set; relying on the Read the Docs GitHub integration."
+            exit 0
+          fi
+
+          api="https://readthedocs.org/api/v3/projects/tornado-gcm"
+          auth="Authorization: Token $RTD_API_TOKEN"
+
+          trigger() {
+            echo "Triggering Read the Docs build for $1"
+            curl -fsS -X POST \
+              -H "$auth" \
+              -H "Content-Type: application/json" \
+              -d '{}' \
+              "$api/versions/$1/builds/"
+          }
+
+          version_exists() {
+            [ "$(curl -s -o /dev/null -w "%{http_code}" -H "$auth" \
+              "$api/versions/$1/")" = "200" ]
+          }
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="$GITHUB_REF_NAME"
+            if ! version_exists "$VERSION"; then
+              # RTD only learns about new tags while syncing versions, which
+              # happens at the start of a build. Trigger latest first, then
+              # wait briefly for the tag to appear.
+              echo "RTD does not know $VERSION yet; building latest to sync versions."
+              trigger latest || true
+              for _ in $(seq 1 12); do
+                sleep 5
+                version_exists "$VERSION" && break
+              done
+            fi
+            if version_exists "$VERSION"; then
+              trigger "$VERSION"
+            else
+              echo "RTD did not register $VERSION in time; latest was rebuilt instead."
+            fi
+          else
+            trigger latest
+          fi

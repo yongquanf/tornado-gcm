@@ -34,7 +34,20 @@ python cli.py benchmark -c configs/sda_neuralgcm_2.8deg_full.yaml -s 20 -d cuda 
 pip install -r docs/requirements.txt
 mkdocs serve
 mkdocs build --strict
+
+# Regenerate the end-to-end architecture diagram (runs a collision check)
+python docs/assets/diagram_src/build_architecture_svg.py
+
+# Release artifacts (wheel + staged sdist)
+python -m build --wheel --no-isolation --outdir dist
+python .github/scripts/build_sdist.py --output dist
+python -m twine check dist/*
 ```
+
+Releases are tag-driven: pushes to `main` run `.github/workflows/release.yml`
+(build + docs), while pushing a `vX.Y.Z` tag publishes to PyPI via Trusted
+Publishing and triggers the release docs build. PyPI versions are immutable,
+so every release needs a version bump in `pyproject.toml` and a matching tag.
 
 ## Packaging and imports
 

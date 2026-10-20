@@ -5,6 +5,15 @@ The design follows the original JAX NeuralGCM codebase closely; the module
 layout intentionally mirrors it (`dinosaur` → `core/`, `neuralgcm` →
 `neural/`).
 
+![TornadoGCM end-to-end system flow](assets/architecture.svg)
+
+*Figure 1 — End-to-end system flow. Distributed training and production
+inference share the same PZHA model step. The SDA control plane (right)
+profiles, schedules, and hot-swaps precision; small diamonds mark
+`zone_cast` boundaries. Steps 1–8 trace one run from data to forecast, and
+the legend records line semantics and state placement (GPU HBM, host DRAM,
+and disk). [Open the full-size SVG](assets/architecture.svg).*
+
 ## One model step
 
 ```
