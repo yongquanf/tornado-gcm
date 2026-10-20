@@ -41,6 +41,9 @@ weights/
 *.grib
 *.grib2
 
+# ---------- Documentation build ----------
+site/
+
 # ---------- Testing / Coverage ----------
 .coverage
 htmlcov/

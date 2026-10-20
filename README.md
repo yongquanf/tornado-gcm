@@ -4,6 +4,8 @@
 
 # TornadoGCM
 
+[![Documentation Status](https://readthedocs.org/projects/tornado-gcm/badge/?version=latest)](https://tornado-gcm.readthedocs.io/en/latest/?badge=latest)
+
 **TornadoGCM** is a pure-PyTorch reimplementation of [NeuralGCM](https://github.com/google-research/neuralgcm) (Google Research) featuring a novel **Precision-Zoned Hybrid Architecture (PZHA)** with automated mixed-precision scheduling for GPU-accelerated global weather forecasting.
 
 > **Disclaimer:** This project is an independent research port. It is not affiliated with or endorsed by Google Research or DeepMind. All trademarks belong to their respective owners.

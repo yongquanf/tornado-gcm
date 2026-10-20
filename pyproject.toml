@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tornado-gcm"
@@ -54,15 +54,28 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/yongquanf/tornado-gcm"
+Documentation = "https://tornado-gcm.readthedocs.io/"
 Repository = "https://github.com/yongquanf/tornado-gcm"
 Issues = "https://github.com/yongquanf/tornado-gcm/issues"
 
 [project.scripts]
 tornado-gcm = "tornado_gcm.cli:main"
 
-[tool.setuptools.packages.find]
-where = [".."]
-include = ["tornado_gcm*"]
+[tool.setuptools]
+package-dir = { "" = ".." }
+packages = [
+    "tornado_gcm",
+    "tornado_gcm.core",
+    "tornado_gcm.distributed",
+    "tornado_gcm.inference",
+    "tornado_gcm.model",
+    "tornado_gcm.neural",
+    "tornado_gcm.precision",
+    "tornado_gcm.precision.accelerator",
+    "tornado_gcm.precision.sparse",
+    "tornado_gcm.precision.storage",
+    "tornado_gcm.training",
+]
 
 [tool.black]
 line-length = 100
