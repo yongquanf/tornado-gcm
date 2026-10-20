@@ -15,6 +15,18 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.1] - 2026-10-20
+
+### Added
+- Read the Docs documentation site and end-to-end system architecture diagram.
+- Tag-driven GitHub Actions release workflow with PyPI Trusted Publishing and staged sdist builds.
+
+### Fixed
+- Build backend and explicit package discovery for the root-as-package layout.
+- Restored `units.py` to import `type_aliases` after the module rename.
+
+---
+
 ## [0.1.0] - 2026-04-20
 
 ### Added
@@ -33,5 +45,6 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 - Internal package namespace renamed from `pytorch_src` to `tornado_gcm`
 
-[Unreleased]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yongquanf/tornado-gcm/releases/tag/v0.1.0
