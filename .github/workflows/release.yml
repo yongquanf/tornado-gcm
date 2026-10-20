@@ -85,8 +85,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Check tag matches package version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Check package version consistency
         working-directory: tornado_gcm
         run: |
           python - <<'PY'
@@ -96,11 +95,20 @@ jobs:
 
           text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
           version = re.search(r'^version = "([^"]+)"', text, re.MULTILINE).group(1)
-          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
-          if version != tag:
+
+          init = pathlib.Path("__init__.py").read_text(encoding="utf-8")
+          dunder = re.search(r'__version__ = "([^"]+)"', init).group(1)
+          if dunder != version:
               raise SystemExit(
-                  f"Tag {tag} does not match pyproject version {version}"
+                  f"__init__.py version {dunder} does not match pyproject version {version}"
               )
+
+          if os.environ.get("GITHUB_REF", "").startswith("refs/tags/"):
+              tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+              if tag != version:
+                  raise SystemExit(
+                      f"Tag {tag} does not match pyproject version {version}"
+                  )
           print("version OK:", version)
           PY
 

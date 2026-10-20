@@ -15,6 +15,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.2] - 2026-10-20
+
+### Fixed
+- Align `tornado_gcm.__version__` with the distribution version so
+  `import tornado_gcm` reports the installed release.
+
+---
+
 ## [0.1.1] - 2026-10-20
 
 ### Added
@@ -45,6 +53,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 - Internal package namespace renamed from `pytorch_src` to `tornado_gcm`
 
-[Unreleased]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/yongquanf/tornado-gcm/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/yongquanf/tornado-gcm/releases/tag/v0.1.0
